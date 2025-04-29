@@ -2,6 +2,8 @@
 
 #[cfg(feature = "fuzz")]
 use arbitrary::Arbitrary;
+use super::redemption_rate::RedemptionRateCurve;
+
 use {
     crate::curve::{
         calculator::{CurveCalculator, RoundDirection, SwapWithoutFeesResult, TradeDirection},
@@ -34,6 +36,9 @@ pub enum CurveType {
     ConstantPrice,
     /// Offset curve, like Uniswap, but the token B side has a faked offset
     Offset,
+
+    /// Spark PSM3 style curve
+    RedemptionRateCurve
 }
 
 /// Encodes all results of swapping from a source token to a destination token
@@ -75,6 +80,7 @@ impl SwapCurve {
         swap_destination_amount: u128,
         trade_direction: TradeDirection,
         fees: &Fees,
+        timestamp: Option<u128>
     ) -> Option<SwapResult> {
         // debit the fee to calculate the amount swapped
         let trade_fee = fees.trading_fee(source_amount)?;
@@ -91,6 +97,7 @@ impl SwapCurve {
             swap_source_amount,
             swap_destination_amount,
             trade_direction,
+            timestamp
         )?;
 
         let source_amount_swapped = source_amount_swapped.checked_add(total_fees)?;
@@ -211,13 +218,13 @@ impl Pack for SwapCurve {
     /// other constants used to calculate swaps, deposits, and withdrawals.
     /// This includes 1 byte for the type, and 72 for the calculator to use as
     /// it needs.  Some calculators may be smaller than 72 bytes.
-    const LEN: usize = 33;
+    const LEN: usize = 113;
 
     /// Unpacks a byte buffer into a SwapCurve
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![input, 0, 33];
+        let input = array_ref![input, 0, 113];
         #[allow(clippy::ptr_offset_with_cast)]
-        let (curve_type, calculator) = array_refs![input, 1, 32];
+        let (curve_type, calculator) = array_refs![input, 1, 112];
         let curve_type = curve_type[0].try_into()?;
         Ok(Self {
             curve_type,
@@ -229,14 +236,15 @@ impl Pack for SwapCurve {
                     Arc::new(ConstantPriceCurve::unpack_from_slice(calculator)?)
                 }
                 CurveType::Offset => Arc::new(OffsetCurve::unpack_from_slice(calculator)?),
+                CurveType::RedemptionRateCurve => Arc::new(RedemptionRateCurve::unpack_from_slice(calculator)?)
             },
         })
     }
 
     /// Pack SwapCurve into a byte buffer
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, 33];
-        let (curve_type, calculator) = mut_array_refs![output, 1, 32];
+        let output = array_mut_ref![output, 0, 113];
+        let (curve_type, calculator) = mut_array_refs![output, 1, 112];
         curve_type[0] = self.curve_type as u8;
         self.calculator.pack_into_slice(&mut calculator[..]);
     }
@@ -258,6 +266,7 @@ impl TryFrom<u8> for CurveType {
             0 => Ok(CurveType::ConstantProduct),
             1 => Ok(CurveType::ConstantPrice),
             2 => Ok(CurveType::Offset),
+            3 => Ok(CurveType::RedemptionRateCurve),
             _ => Err(ProgramError::InvalidAccountData),
         }
     }
@@ -282,7 +291,7 @@ mod test {
         assert_eq!(swap_curve, unpacked);
 
         let mut packed = vec![curve_type as u8];
-        packed.extend_from_slice(&[0u8; 32]); // 32 bytes reserved for curve
+        packed.extend_from_slice(&[0u8; 112]); // 32 bytes reserved for curve
         let unpacked = SwapCurve::unpack_from_slice(&packed).unwrap();
         assert_eq!(swap_curve, unpacked);
     }
@@ -324,6 +333,7 @@ mod test {
                 swap_destination_amount,
                 TradeDirection::AtoB,
                 &fees,
+                None
             )
             .unwrap();
         assert_eq!(result.new_swap_source_amount, 1100);
@@ -369,6 +379,7 @@ mod test {
                 swap_destination_amount,
                 TradeDirection::AtoB,
                 &fees,
+                None
             )
             .unwrap();
         assert_eq!(result.new_swap_source_amount, 1100);
@@ -396,6 +407,7 @@ mod test {
                 swap_destination_amount,
                 TradeDirection::AtoB,
                 &fees,
+                None
             )
             .unwrap();
         assert_eq!(result.new_swap_source_amount, 1100);
@@ -423,6 +435,7 @@ mod test {
                 swap_destination_amount,
                 TradeDirection::AtoB,
                 &fees,
+                None
             )
             .unwrap();
 

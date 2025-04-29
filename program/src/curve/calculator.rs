@@ -92,6 +92,7 @@ pub trait CurveCalculator: Debug + DynPack {
         swap_source_amount: u128,
         swap_destination_amount: u128,
         trade_direction: TradeDirection,
+        timestamp: Option<u128>,
     ) -> Option<SwapWithoutFeesResult>;
 
     /// Get the supply for a new pool
@@ -223,6 +224,7 @@ pub mod test {
                 swap_source_amount,
                 swap_destination_amount,
                 trade_direction,
+                None
             )
             .unwrap();
         let opposite_direction = trade_direction.opposite();
@@ -331,6 +333,7 @@ pub mod test {
                         new_swap_token_a_amount,
                         new_swap_token_b_amount,
                         trade_direction,
+                        None
                     )
                     .unwrap();
                 withdraw_result.token_b_amount + results.destination_amount_swapped
@@ -342,6 +345,7 @@ pub mod test {
                         new_swap_token_b_amount,
                         new_swap_token_a_amount,
                         trade_direction,
+                        None
                     )
                     .unwrap();
                 withdraw_result.token_a_amount + results.destination_amount_swapped
@@ -399,6 +403,7 @@ pub mod test {
                 swap_source_amount,
                 swap_destination_amount,
                 trade_direction,
+                None
             )
             .unwrap();
 
@@ -536,6 +541,7 @@ pub mod test {
     }
 
     prop_compose! {
+        /// missing docs
         pub fn total_and_intermediate(max_value: u64)(total in 1..max_value)
                         (intermediate in 1..total, total in Just(total))
                         -> (u64, u64) {

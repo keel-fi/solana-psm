@@ -481,6 +481,7 @@ impl Processor {
                 u128::from(dest_account.amount),
                 trade_direction,
                 token_swap.fees(),
+                token_swap.get_current_timestamp_opt()?
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
 
@@ -2068,6 +2069,13 @@ mod tests {
                     &mut SolanaAccount::default(),
                 ],
             )
+        }
+
+        fn get_current_timestamp_opt(&self) -> Result<Option<u128>, ProgramError> {
+            Ok(match self.swap_curve.curve_type {
+                CurveType::RedemptionRateCurve => Some(Clock::get()?.unix_timestamp as u128),
+                _ => None
+            })
         }
     }
 
@@ -6166,6 +6174,7 @@ mod tests {
                 token_b_amount.into(),
                 TradeDirection::AtoB,
                 &fees,
+                accounts.get_current_timestamp_opt().unwrap()
             )
             .unwrap();
 
@@ -6244,6 +6253,7 @@ mod tests {
                 token_a_amount.into(),
                 TradeDirection::BtoA,
                 &fees,
+                accounts.get_current_timestamp_opt().unwrap()
             )
             .unwrap();
         // tweak values based on transfer fees assessed

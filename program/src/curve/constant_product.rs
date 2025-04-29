@@ -180,6 +180,7 @@ impl CurveCalculator for ConstantProductCurve {
         swap_source_amount: u128,
         swap_destination_amount: u128,
         _trade_direction: TradeDirection,
+        _timestamp: Option<u128>
     ) -> Option<SwapWithoutFeesResult> {
         swap(source_amount, swap_source_amount, swap_destination_amount)
     }
@@ -368,6 +369,7 @@ mod tests {
                 swap_source_amount,
                 swap_destination_amount,
                 TradeDirection::AtoB,
+                None
             )
             .unwrap();
         assert_eq!(result.source_amount_swapped, expected_source_amount_swapped);
@@ -386,7 +388,7 @@ mod tests {
 
         // much too small
         assert!(curve
-            .swap_without_fees(10, 70_000_000_000, 4_000_000, TradeDirection::AtoB)
+            .swap_without_fees(10, 70_000_000_000, 4_000_000, TradeDirection::AtoB, None)
             .is_none()); // spot: 10 * 4m / 70b = 0
 
         let tests: &[(u128, u128, u128, u128, u128)] = &[

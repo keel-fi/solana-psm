@@ -70,6 +70,7 @@ impl CurveCalculator for ConstantPriceCurve {
         _swap_source_amount: u128,
         _swap_destination_amount: u128,
         trade_direction: TradeDirection,
+        _timestamp: Option<u128>
     ) -> Option<SwapWithoutFeesResult> {
         let token_b_price = self.token_b_price as u128;
 
@@ -294,6 +295,7 @@ mod tests {
                 swap_source_amount,
                 swap_destination_amount,
                 TradeDirection::AtoB,
+                None
             )
             .unwrap();
         assert_eq!(result, expected_result);
@@ -304,6 +306,7 @@ mod tests {
                 swap_source_amount,
                 swap_destination_amount,
                 TradeDirection::BtoA,
+                None
             )
             .unwrap();
         assert_eq!(result, expected_result);
@@ -338,10 +341,11 @@ mod tests {
             token_a_amount,
             token_b_amount,
             TradeDirection::AtoB,
+            None
         );
         assert!(bad_result.is_none());
         let bad_result =
-            curve.swap_without_fees(1u128, token_a_amount, token_b_amount, TradeDirection::AtoB);
+            curve.swap_without_fees(1u128, token_a_amount, token_b_amount, TradeDirection::AtoB, None);
         assert!(bad_result.is_none());
         let result = curve
             .swap_without_fees(
@@ -349,6 +353,7 @@ mod tests {
                 token_a_amount,
                 token_b_amount,
                 TradeDirection::AtoB,
+                None
             )
             .unwrap();
         assert_eq!(result.source_amount_swapped, token_b_price);
@@ -368,13 +373,14 @@ mod tests {
             token_a_amount,
             token_b_amount,
             TradeDirection::AtoB,
+            None
         );
         assert!(bad_result.is_none());
         let bad_result =
-            curve.swap_without_fees(1u128, token_a_amount, token_b_amount, TradeDirection::AtoB);
+            curve.swap_without_fees(1u128, token_a_amount, token_b_amount, TradeDirection::AtoB, None);
         assert!(bad_result.is_none());
         let bad_result =
-            curve.swap_without_fees(0u128, token_a_amount, token_b_amount, TradeDirection::AtoB);
+            curve.swap_without_fees(0u128, token_a_amount, token_b_amount, TradeDirection::AtoB, None);
         assert!(bad_result.is_none());
         let result = curve
             .swap_without_fees(
@@ -382,6 +388,7 @@ mod tests {
                 token_a_amount,
                 token_b_amount,
                 TradeDirection::AtoB,
+                None
             )
             .unwrap();
         assert_eq!(result.source_amount_swapped, token_b_price);

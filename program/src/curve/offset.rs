@@ -46,6 +46,7 @@ impl CurveCalculator for OffsetCurve {
         swap_source_amount: u128,
         swap_destination_amount: u128,
         trade_direction: TradeDirection,
+        _timestamp: Option<u128>
     ) -> Option<SwapWithoutFeesResult> {
         let token_b_offset = self.token_b_offset as u128;
         let swap_source_amount = match trade_direction {
@@ -231,6 +232,7 @@ mod tests {
                 swap_source_amount,
                 swap_destination_amount,
                 TradeDirection::AtoB,
+                None
             )
             .unwrap();
         assert_eq!(result.source_amount_swapped, source_amount);
@@ -241,6 +243,7 @@ mod tests {
                 swap_source_amount,
                 swap_destination_amount,
                 TradeDirection::BtoA,
+                None
             )
             .unwrap();
         assert_eq!(result.source_amount_swapped, source_amount);
@@ -260,6 +263,7 @@ mod tests {
                 swap_source_amount,
                 swap_destination_amount,
                 TradeDirection::AtoB,
+                None
             )
             .unwrap();
         assert_eq!(result.source_amount_swapped, source_amount);
@@ -270,6 +274,7 @@ mod tests {
             swap_source_amount,
             swap_destination_amount,
             TradeDirection::BtoA,
+            None
         );
         assert!(bad_result.is_none());
     }
@@ -287,6 +292,7 @@ mod tests {
                 swap_source_amount,
                 swap_destination_amount,
                 TradeDirection::AtoB,
+                None
             )
             .unwrap();
         assert_eq!(result.source_amount_swapped, source_amount);
@@ -306,6 +312,7 @@ mod tests {
                 swap_source_amount,
                 swap_destination_amount,
                 TradeDirection::BtoA,
+                None
             )
             .unwrap();
         assert_eq!(result.source_amount_swapped, 18_373_104_376_818_475_561);
