@@ -1,4 +1,4 @@
-# Token Swap Program
+# NOVA PSM
 
 A Uniswap-like exchange for the Token program on the Solana blockchain.
 
