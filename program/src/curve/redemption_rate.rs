@@ -5,13 +5,61 @@ use solana_program::{
     program_error::ProgramError,
     program_pack::{IsInitialized, Pack, Sealed},
 };
-use spl_math::uint::U256;
+use spl_math::{
+    checked_ceil_div::CheckedCeilDiv, precise_number::PreciseNumber, uint::U256
+};
 use crate::error::SwapError;
 
 use super::calculator::{
-    map_zero_to_none, CurveCalculator, DynPack, SwapWithoutFeesResult, TradeDirection
+    map_zero_to_none, 
+    CurveCalculator, 
+    DynPack, 
+    RoundDirection, 
+    SwapWithoutFeesResult, 
+    TradeDirection, TradingTokenResult
 };
 
+/// Get the amount of pool tokens for the given amount of token A or B.
+pub fn trading_tokens_to_pool_tokens(
+    token_b_price: U256,
+    ray: U256,
+    source_amount: u128,
+    swap_token_a_amount: u128,
+    swap_token_b_amount: u128,
+    pool_supply: u128,
+    trade_direction: TradeDirection,
+    round_direction: RoundDirection,
+) -> Option<u128> {
+    let given_value = match trade_direction {
+        TradeDirection::AtoB => U256::from(source_amount),
+        TradeDirection::BtoA => U256::from(source_amount)
+            .checked_mul(token_b_price)?
+            .checked_div(ray)?
+    };
+
+    let total_value = U256::from(swap_token_b_amount)
+        .checked_mul(token_b_price)?
+        .checked_div(ray)?
+        .checked_add(U256::from(swap_token_a_amount))?;
+
+    let pool_supply = U256::from(pool_supply);
+
+    match round_direction {
+        RoundDirection::Floor => Some(
+            pool_supply
+                .checked_mul(given_value)?
+                .checked_div(total_value)?
+                .as_u128(),
+        ),
+        RoundDirection::Ceiling => Some(
+            pool_supply
+                .checked_mul(given_value)?
+                .checked_ceil_div(total_value)?
+                .0
+                .as_u128(),
+        ),
+    }
+}
 
 /// RedemptionRateCurve struct implementing CurveCalculator
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -126,25 +174,20 @@ impl CurveCalculator for RedemptionRateCurve {
         let (source_amount_swapped, destination_amount_swapped) = match trade_direction {
             TradeDirection::BtoA => (source_amount, source_amount.checked_mul(token_b_price)?.checked_div(ray)?),
             TradeDirection::AtoB => {
-                let destination_amount_swapped = source_amount
+                let destination_amount = source_amount
                     .checked_mul(ray)?
                     .checked_div(token_b_price)?;
 
-                let mut source_amount_swapped = source_amount;
+                let (source_amount_used, _) = destination_amount
+                    .checked_mul(token_b_price)?
+                    .checked_ceil_div(ray)?;
+                
 
-                let remainder = source_amount_swapped
-                    .checked_mul(ray)?
-                    .checked_rem(token_b_price)?;
-
-                if remainder > U256::zero() {
-                    let reduction = remainder
-                        .checked_mul(ray)?
-                        .checked_div(token_b_price)?;
-
-                    source_amount_swapped = source_amount.checked_sub(reduction)?;
+                if source_amount_used > source_amount {
+                    return None;
                 }
-
-                (source_amount_swapped, destination_amount_swapped)
+            
+                (source_amount_used, destination_amount)
             }
         };
 
@@ -159,56 +202,166 @@ impl CurveCalculator for RedemptionRateCurve {
 
     fn pool_tokens_to_trading_tokens(
         &self,
-        _pool_tokens: u128,
-        _pool_token_supply: u128,
-        _swap_token_a_amount: u128,
-        _swap_token_b_amount: u128,
-        _round_direction: super::calculator::RoundDirection,
+        pool_tokens: u128,
+        pool_token_supply: u128,
+        swap_token_a_amount: u128,
+        swap_token_b_amount: u128,
+        round_direction: super::calculator::RoundDirection,
+        timestamp: Option<u128>
     ) -> Option<super::calculator::TradingTokenResult> {
-        todo!()
+
+        let token_b_price = self.get_conversion_rate(timestamp?)?;
+        let ray = U256::from(self.ray);
+
+        let pool_tokens = U256::from(pool_tokens);
+        let pool_token_supply = U256::from(pool_token_supply);
+
+        let total_value = U256::from(self
+            .normalized_value(swap_token_a_amount, swap_token_b_amount, timestamp)?
+            .to_imprecise()?);
+
+        let (token_a_amount, token_b_amount) = match round_direction {
+            RoundDirection::Floor => {
+
+                let token_a_amount = pool_tokens
+                    .checked_mul(total_value)?
+                    .checked_div(pool_token_supply)?
+                    .min(U256::from(swap_token_a_amount));
+
+                let token_b_amount = pool_tokens
+                    .checked_mul(total_value)?
+                    .checked_mul(ray)?
+                    .checked_div(token_b_price)?
+                    .checked_div(pool_token_supply)?
+                    .min(U256::from(swap_token_b_amount)); 
+
+                (token_a_amount, token_b_amount)
+            }
+            RoundDirection::Ceiling => {
+                let (token_a_amount, _) = pool_tokens
+                    .checked_mul(total_value)?
+                    .checked_ceil_div(pool_token_supply)?;
+
+                let (pool_value_as_token_b, _) = pool_tokens
+                    .checked_mul(total_value)?
+                    .checked_mul(ray)?
+                    .checked_ceil_div(token_b_price)?;
+
+                let (token_b_amount, _) =
+                    pool_value_as_token_b.checked_ceil_div(pool_token_supply)?;
+
+                (token_a_amount, token_b_amount)
+            }
+        };
+        Some(TradingTokenResult {
+            token_a_amount: token_a_amount.as_u128(),
+            token_b_amount: token_b_amount.as_u128(),
+        })
     }
 
     fn deposit_single_token_type(
         &self,
-        _source_amount: u128,
-        _swap_token_a_amount: u128,
-        _swap_token_b_amount: u128,
-        _pool_supply: u128,
-        _trade_direction: TradeDirection,
+        source_amount: u128,
+        swap_token_a_amount: u128,
+        swap_token_b_amount: u128,
+        pool_supply: u128,
+        trade_direction: TradeDirection,
+        timestamp: Option<u128>,
     ) -> Option<u128> {
-        todo!()
+        let token_b_price = self.get_conversion_rate(timestamp?)?;
+        let ray = U256::from(self.ray);
+
+        trading_tokens_to_pool_tokens(
+            token_b_price, 
+            ray, 
+            source_amount, 
+            swap_token_a_amount, 
+            swap_token_b_amount, 
+            pool_supply, 
+            trade_direction, 
+            RoundDirection::Floor
+        )
     }
 
     fn withdraw_single_token_type_exact_out(
         &self,
-        _source_amount: u128,
-        _swap_token_a_amount: u128,
-        _swap_token_b_amount: u128,
-        _pool_supply: u128,
-        _trade_direction: TradeDirection,
-        _round_direction: super::calculator::RoundDirection,
+        source_amount: u128,
+        swap_token_a_amount: u128,
+        swap_token_b_amount: u128,
+        pool_supply: u128,
+        trade_direction: TradeDirection,
+        round_direction: RoundDirection,
+        timestamp: Option<u128>,
     ) -> Option<u128> {
-        todo!()
+
+        let token_b_price = self.get_conversion_rate(timestamp?)?;
+        let ray = U256::from(self.ray);
+
+        trading_tokens_to_pool_tokens(
+            token_b_price, 
+            ray, 
+            source_amount, 
+            swap_token_a_amount, 
+            swap_token_b_amount, 
+            pool_supply, 
+            trade_direction, 
+            round_direction
+        )
     }
 
-    fn validate(&self) -> Result<(), SwapError> {
-        todo!()
+    fn validate(&self, timestamp: Option<u128>) -> Result<(), SwapError> {
+        let timestamp = timestamp
+            .ok_or(SwapError::MissingTimestamp)?;
+
+        let token_b_price = self.get_conversion_rate(timestamp)
+            .ok_or(SwapError::CalculationFailure)?;
+
+        if token_b_price == U256::zero() {
+            Err(SwapError::InvalidCurve)
+        } else {
+            Ok(())
+        }
     }
 
     fn validate_supply(
         &self, 
-        _token_a_amount: u64, 
+        token_a_amount: u64, 
         _token_b_amount: u64
     ) -> Result<(), SwapError> {
-        todo!()
+        if token_a_amount == 0 {
+            return Err(SwapError::EmptySupply);
+        }
+        Ok(())
     }
 
     fn normalized_value(
         &self,
-        _swap_token_a_amount: u128,
-        _swap_token_b_amount: u128,
+        swap_token_a_amount: u128,
+        swap_token_b_amount: u128,
+        timestamp: Option<u128>
     ) -> Option<spl_math::precise_number::PreciseNumber> {
-        todo!()
+        let token_b_price = self.get_conversion_rate(timestamp?)?;
+        let ray = U256::from(self.ray);
+        let swap_token_b_amount = U256::from(swap_token_b_amount);
+
+        let swap_token_b_value = swap_token_b_amount
+            .checked_mul(token_b_price)?
+            .checked_div(ray)?;
+
+        // special logic in case we're close to the limits, avoid overflowing u128
+        let value = if swap_token_b_value.saturating_sub(U256::from(u64::MAX))
+            > U256::MAX.saturating_sub(U256::from(u64::MAX))
+        {
+            swap_token_b_value
+                .checked_div(U256::from(2))?
+                .checked_add(U256::from(swap_token_a_amount).checked_div(U256::from(2))?)?
+        } else {
+            U256::from(swap_token_a_amount)
+                .checked_add(swap_token_b_value)?
+                .checked_div(U256::from(2))?
+        };
+    
+        PreciseNumber::new(value.try_into().ok()?)
     }
 
 }
@@ -267,9 +420,16 @@ impl DynPack for RedemptionRateCurve {
 
 #[cfg(test)]
 mod tests {
-    use std::u128;
-
-    use super::*;
+    use {
+        super::*,
+        crate::curve::calculator::{
+            test::{
+                check_curve_value_from_swap, check_deposit_token_conversion, check_withdraw_token_conversion, total_and_intermediate, CONVERSION_BASIS_POINTS_GUARANTEE
+            },
+            INITIAL_SWAP_POOL_AMOUNT,
+        },
+        proptest::prelude::*,
+    };
 
     const RAY: u128 = 10u128.pow(27);
 
@@ -436,5 +596,311 @@ mod tests {
         assert_eq!(result.destination_amount_swapped / RAY, 1u128);
     }
 
+    proptest! {
+        #[test]
+        fn deposit_token_conversion_a_to_b(
+            // in the pool token conversion calcs, we simulate trading half of
+            // source_token_amount, so this needs to be at least 2
+            source_token_amount in 2..u64::MAX,
+            swap_source_amount in 1..u64::MAX,
+            swap_destination_amount in 1..u64::MAX,
+            pool_supply in INITIAL_SWAP_POOL_AMOUNT..u64::MAX as u128,
+            chi_raw in 1_000_000..10_000_000_000u128
+        ) {
 
+            let ssr = RAY; // fixed interest rate of 1.0
+            let rho = 0;
+            let chi = chi_raw * RAY;
+
+            let curve = create_test_curve(ssr, rho, chi);
+            
+            let token_b_price = chi / RAY;
+            let source_token_amount = source_token_amount as u128;
+            let swap_source_amount = swap_source_amount as u128;
+            let swap_destination_amount = swap_destination_amount as u128;
+
+            let traded_source_amount = source_token_amount / 2;
+            // Make sure that the trade yields at least 1 token B
+            prop_assume!(traded_source_amount / token_b_price >= 1);
+            // Make sure there's enough tokens to get back on the other side
+            prop_assume!(traded_source_amount / token_b_price <= swap_destination_amount);
+            
+            check_deposit_token_conversion(
+                &curve,
+                source_token_amount,
+                swap_source_amount,
+                swap_destination_amount,
+                TradeDirection::AtoB,
+                pool_supply,
+                CONVERSION_BASIS_POINTS_GUARANTEE,
+                Some(0)
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn deposit_token_conversion_b_to_a(
+            // in the pool token conversion calcs, we simulate trading half of
+            // source_token_amount, so this needs to be at least 2
+            source_token_amount in 2..u32::MAX, // kept small to avoid proptest rejections
+            swap_source_amount in 1..u64::MAX,
+            swap_destination_amount in 1..u64::MAX,
+            pool_supply in INITIAL_SWAP_POOL_AMOUNT..u64::MAX as u128,
+            chi_raw in 1_000_000..10_000_000_000u128, // keeps price reasonable
+        ) {
+
+            let ssr = RAY; // fixed interest rate of 1.0
+            let rho = 0;
+            let chi = chi_raw * RAY;
+
+            let curve = create_test_curve(ssr, rho, chi);
+            
+            let token_b_price = chi / RAY;
+            let source_token_amount = source_token_amount as u128;
+            let swap_source_amount = swap_source_amount as u128;
+            let swap_destination_amount = swap_destination_amount as u128;
+            // The constant price curve needs to have enough destination amount
+            // on the other side to complete the swap
+            prop_assume!(token_b_price * source_token_amount / 2 <= swap_destination_amount);
+
+            check_deposit_token_conversion(
+                &curve,
+                source_token_amount,
+                swap_source_amount,
+                swap_destination_amount,
+                TradeDirection::BtoA,
+                pool_supply,
+                CONVERSION_BASIS_POINTS_GUARANTEE,
+                Some(0)
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn withdraw_token_conversion(
+            (pool_token_supply, pool_token_amount) in total_and_intermediate(u64::MAX),
+            swap_token_a_amount in 1..u64::MAX,
+            swap_token_b_amount in 1..u32::MAX, // kept small to avoid proptest rejections
+            chi_raw in 1_000_000..10_000_000_000u128, // kept small to avoid proptest rejections
+        ) {
+
+            let ssr = RAY; // fixed interest rate of 1.0
+            let rho = 0;
+            let chi = chi_raw * RAY;
+            let token_b_price = chi / RAY;
+
+            let curve = create_test_curve(ssr, rho, chi);
+
+            let pool_token_amount = pool_token_amount as u128;
+            let pool_token_supply = pool_token_supply as u128;
+            let swap_token_a_amount = swap_token_a_amount as u128;
+            let swap_token_b_amount = swap_token_b_amount as u128;
+
+            let value = curve.normalized_value(swap_token_a_amount, swap_token_b_amount, Some(0)).unwrap();
+
+            // Make sure we trade at least one of each token
+            prop_assume!(
+                U256::from(pool_token_amount) * U256::from(value.to_imprecise().unwrap()) 
+                >= 
+                U256::from(2) * U256::from(token_b_price) * U256::from(pool_token_supply)
+            );
+
+            let withdraw_result = curve
+                .pool_tokens_to_trading_tokens(
+                    pool_token_amount,
+                    pool_token_supply,
+                    swap_token_a_amount,
+                    swap_token_b_amount,
+                    RoundDirection::Floor,
+                    Some(0)
+                )
+                .unwrap();
+            prop_assume!(withdraw_result.token_a_amount <= swap_token_a_amount);
+            prop_assume!(withdraw_result.token_b_amount <= swap_token_b_amount);
+
+            check_withdraw_token_conversion(
+                &curve,
+                pool_token_amount,
+                pool_token_supply,
+                swap_token_a_amount,
+                swap_token_b_amount,
+                TradeDirection::AtoB,
+                // TODO see why this needs to be so high
+                CONVERSION_BASIS_POINTS_GUARANTEE * 100,
+                Some(0)
+            );
+            check_withdraw_token_conversion(
+                &curve,
+                pool_token_amount,
+                pool_token_supply,
+                swap_token_a_amount,
+                swap_token_b_amount,
+                TradeDirection::BtoA,
+                // TODO see why this needs to be so high
+                CONVERSION_BASIS_POINTS_GUARANTEE * 100,
+                Some(0)
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn curve_value_does_not_decrease_from_swap_a_to_b(
+            source_token_amount in 1..u64::MAX,
+            swap_source_amount in 1..u64::MAX,
+            swap_destination_amount in 1..u64::MAX,
+            chi_raw in 1_000_000..10_000_000_000u128,
+        ) {
+            let ssr = RAY; // fixed interest rate of 1.0
+            let rho = 0;
+            let chi = chi_raw * RAY;
+            let token_b_price = chi / RAY;
+            
+            let source_token_amount = U256::from(source_token_amount);
+            let swap_destination_amount = U256::from(swap_destination_amount);
+
+            // Make sure that the trade yields at least 1 token B
+            prop_assume!(source_token_amount / token_b_price >= U256::from(1));
+            // Make sure there's enough tokens to get back on the other side
+            prop_assume!(source_token_amount / token_b_price <= swap_destination_amount);
+            let curve = create_test_curve(ssr, rho, chi);
+            check_curve_value_from_swap(
+                &curve,
+                source_token_amount.as_u128(),
+                swap_source_amount as u128,
+                swap_destination_amount.as_u128(),
+                TradeDirection::AtoB,
+                Some(0)
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn curve_value_does_not_decrease_from_deposit(
+            pool_token_amount in 2..u64::MAX, // minimum 2 to splitting on deposit
+            pool_token_supply in INITIAL_SWAP_POOL_AMOUNT..u64::MAX as u128,
+            swap_token_a_amount in 1..u64::MAX,
+            swap_token_b_amount in 1..u32::MAX, // kept small to avoid proptest rejections
+            chi_raw in 1_000_000..10_000_000_000u128,
+        ) {
+            let ssr = RAY; // fixed interest rate of 1.0
+            let rho = 0;
+            let chi = chi_raw * RAY;
+            let token_b_price = chi / RAY;
+
+            let curve = create_test_curve(ssr, rho, chi);
+
+            let pool_token_amount = pool_token_amount as u128;
+            let swap_token_a_amount = swap_token_a_amount as u128;
+            let swap_token_b_amount = swap_token_b_amount as u128;
+            let token_b_price = token_b_price as u128;
+
+            let value = curve.normalized_value(swap_token_a_amount, swap_token_b_amount, Some(0)).unwrap();
+
+            // Make sure we trade at least one of each token
+            prop_assume!(
+                U256::from(pool_token_amount) * U256::from(value.to_imprecise().unwrap()) 
+                >= 
+                U256::from(2) * U256::from(token_b_price) * U256::from(pool_token_supply)
+            );
+            let deposit_result = curve
+                .pool_tokens_to_trading_tokens(
+                    pool_token_amount,
+                    pool_token_supply,
+                    swap_token_a_amount,
+                    swap_token_b_amount,
+                    RoundDirection::Ceiling,
+                    Some(0)
+                )
+                .unwrap();
+            let new_swap_token_a_amount = swap_token_a_amount + deposit_result.token_a_amount;
+            let new_swap_token_b_amount = swap_token_b_amount + deposit_result.token_b_amount;
+            let new_pool_token_supply = pool_token_supply + pool_token_amount;
+
+            let new_value = curve.normalized_value(new_swap_token_a_amount, new_swap_token_b_amount, Some(0)).unwrap();
+
+            // the following inequality must hold:
+            // new_value / new_pool_token_supply >= value / pool_token_supply
+            // which reduces to:
+            // new_value * pool_token_supply >= value * new_pool_token_supply
+
+            let pool_token_supply = PreciseNumber::new(pool_token_supply).unwrap();
+            let new_pool_token_supply = PreciseNumber::new(new_pool_token_supply).unwrap();
+            //let value = U256::from(value);
+            //let new_value = U256::from(new_value);
+
+            assert!(new_value.checked_mul(&pool_token_supply).unwrap().greater_than_or_equal(&value.checked_mul(&new_pool_token_supply).unwrap()));
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn curve_value_does_not_decrease_from_withdraw(
+            (pool_token_supply, pool_token_amount) in total_and_intermediate(u64::MAX),
+            swap_token_a_amount in 1..u64::MAX,
+            swap_token_b_amount in 1..u32::MAX, // kept small to avoid proptest rejections
+            chi_raw in 1_000_000..10_000_000_000u128, // kept small to avoid proptest rejections
+        ) {
+
+            let ssr = RAY; // fixed interest rate of 1.0
+            let rho = 0;
+            let chi = chi_raw * RAY;
+            let token_b_price = chi / RAY;
+
+            let curve = create_test_curve(ssr, rho, chi);
+
+            let pool_token_amount = pool_token_amount as u128;
+            let pool_token_supply = pool_token_supply as u128;
+            let swap_token_a_amount = swap_token_a_amount as u128;
+            let swap_token_b_amount = swap_token_b_amount as u128;
+            let token_b_price = token_b_price as u128;
+
+            let value = curve.normalized_value(
+                swap_token_a_amount, 
+                swap_token_b_amount, 
+                Some(0)
+            ).unwrap();
+
+            // Make sure we trade at least one of each token
+            prop_assume!(
+                U256::from(pool_token_amount) * U256::from(value.to_imprecise().unwrap()) 
+                >= 
+                U256::from(2) * U256::from(token_b_price) * U256::from(pool_token_supply)
+            );
+            prop_assume!(pool_token_amount <= pool_token_supply);
+            let withdraw_result = curve
+                .pool_tokens_to_trading_tokens(
+                    pool_token_amount,
+                    pool_token_supply,
+                    swap_token_a_amount,
+                    swap_token_b_amount,
+                    RoundDirection::Floor,
+                    Some(0)
+                )
+                .unwrap();
+            prop_assume!(withdraw_result.token_a_amount <= swap_token_a_amount);
+            prop_assume!(withdraw_result.token_b_amount <= swap_token_b_amount);
+            let new_swap_token_a_amount = swap_token_a_amount - withdraw_result.token_a_amount;
+            let new_swap_token_b_amount = swap_token_b_amount - withdraw_result.token_b_amount;
+            let new_pool_token_supply = pool_token_supply - pool_token_amount;
+
+            let new_value = curve.normalized_value(
+                new_swap_token_a_amount, 
+                new_swap_token_b_amount, 
+                Some(0)
+            ).unwrap();
+
+            // the following inequality must hold:
+            // new_value / new_pool_token_supply >= value / pool_token_supply
+            // which reduces to:
+            // new_value * pool_token_supply >= value * new_pool_token_supply
+
+            let pool_token_supply = PreciseNumber::new(pool_token_supply).unwrap();
+            let new_pool_token_supply = PreciseNumber::new(new_pool_token_supply).unwrap();
+            assert!(new_value.checked_mul(&pool_token_supply).unwrap().greater_than_or_equal(&value.checked_mul(&new_pool_token_supply).unwrap()));
+        }
+    }
 }

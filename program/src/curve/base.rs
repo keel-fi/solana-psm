@@ -121,6 +121,7 @@ impl SwapCurve {
         pool_supply: u128,
         trade_direction: TradeDirection,
         fees: &Fees,
+        timestamp: Option<u128>,
     ) -> Option<u128> {
         if source_amount == 0 {
             return Some(0);
@@ -139,6 +140,7 @@ impl SwapCurve {
             swap_token_b_amount,
             pool_supply,
             trade_direction,
+            timestamp
         )
     }
 
@@ -151,6 +153,7 @@ impl SwapCurve {
         pool_supply: u128,
         trade_direction: TradeDirection,
         fees: &Fees,
+        timestamp: Option<u128>,
     ) -> Option<u128> {
         if source_amount == 0 {
             return Some(0);
@@ -171,6 +174,7 @@ impl SwapCurve {
             pool_supply,
             trade_direction,
             RoundDirection::Ceiling,
+            timestamp
         )
     }
 }
@@ -448,6 +452,7 @@ mod test {
                 pool_supply,
                 TradeDirection::AtoB,
                 &fees,
+                None
             )
             .unwrap();
         let withdraw_pool_tokens = swap_curve
@@ -458,6 +463,7 @@ mod test {
                 pool_supply + deposit_pool_tokens,
                 TradeDirection::BtoA,
                 &fees,
+                None
             )
             .unwrap();
         (withdraw_pool_tokens, deposit_pool_tokens)

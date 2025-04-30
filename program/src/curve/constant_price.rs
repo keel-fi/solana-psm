@@ -110,10 +110,11 @@ impl CurveCalculator for ConstantPriceCurve {
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
         round_direction: RoundDirection,
+        timestamp: Option<u128>
     ) -> Option<TradingTokenResult> {
         let token_b_price = self.token_b_price as u128;
         let total_value = self
-            .normalized_value(swap_token_a_amount, swap_token_b_amount)?
+            .normalized_value(swap_token_a_amount, swap_token_b_amount, timestamp)?
             .to_imprecise()?;
 
         let (token_a_amount, token_b_amount) = match round_direction {
@@ -155,6 +156,7 @@ impl CurveCalculator for ConstantPriceCurve {
         swap_token_b_amount: u128,
         pool_supply: u128,
         trade_direction: TradeDirection,
+        _timestamp: Option<u128>,
     ) -> Option<u128> {
         trading_tokens_to_pool_tokens(
             self.token_b_price,
@@ -175,6 +177,7 @@ impl CurveCalculator for ConstantPriceCurve {
         pool_supply: u128,
         trade_direction: TradeDirection,
         round_direction: RoundDirection,
+        _timestamp: Option<u128>,
     ) -> Option<u128> {
         trading_tokens_to_pool_tokens(
             self.token_b_price,
@@ -187,7 +190,7 @@ impl CurveCalculator for ConstantPriceCurve {
         )
     }
 
-    fn validate(&self) -> Result<(), SwapError> {
+    fn validate(&self, _timestamp: Option<u128>) -> Result<(), SwapError> {
         if self.token_b_price == 0 {
             Err(SwapError::InvalidCurve)
         } else {
@@ -215,6 +218,7 @@ impl CurveCalculator for ConstantPriceCurve {
         &self,
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
+        _timestamp: Option<u128>
     ) -> Option<PreciseNumber> {
         let swap_token_b_value = swap_token_b_amount.checked_mul(self.token_b_price as u128)?;
         // special logic in case we're close to the limits, avoid overflowing u128
@@ -423,6 +427,7 @@ mod tests {
                 TradeDirection::AtoB,
                 pool_supply,
                 CONVERSION_BASIS_POINTS_GUARANTEE,
+                None
             );
         }
     }
@@ -457,6 +462,7 @@ mod tests {
                 TradeDirection::BtoA,
                 pool_supply,
                 CONVERSION_BASIS_POINTS_GUARANTEE,
+                None
             );
         }
     }
@@ -478,7 +484,7 @@ mod tests {
             let swap_token_a_amount = swap_token_a_amount as u128;
             let swap_token_b_amount = swap_token_b_amount as u128;
 
-            let value = curve.normalized_value(swap_token_a_amount, swap_token_b_amount).unwrap();
+            let value = curve.normalized_value(swap_token_a_amount, swap_token_b_amount, None).unwrap();
 
             // Make sure we trade at least one of each token
             prop_assume!(pool_token_amount * value.to_imprecise().unwrap() >= 2 * token_b_price * pool_token_supply);
@@ -490,6 +496,7 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Floor,
+                    None
                 )
                 .unwrap();
             prop_assume!(withdraw_result.token_a_amount <= swap_token_a_amount);
@@ -503,7 +510,8 @@ mod tests {
                 swap_token_b_amount,
                 TradeDirection::AtoB,
                 // TODO see why this needs to be so high
-                CONVERSION_BASIS_POINTS_GUARANTEE * 20
+                CONVERSION_BASIS_POINTS_GUARANTEE * 20,
+                None
             );
             check_withdraw_token_conversion(
                 &curve,
@@ -513,7 +521,8 @@ mod tests {
                 swap_token_b_amount,
                 TradeDirection::BtoA,
                 // TODO see why this needs to be so high
-                CONVERSION_BASIS_POINTS_GUARANTEE * 20
+                CONVERSION_BASIS_POINTS_GUARANTEE * 20,
+                None
             );
         }
     }
@@ -536,7 +545,8 @@ mod tests {
                 source_token_amount as u128,
                 swap_source_amount as u128,
                 swap_destination_amount as u128,
-                TradeDirection::AtoB
+                TradeDirection::AtoB,
+                None
             );
         }
     }
@@ -564,7 +574,8 @@ mod tests {
                 source_token_amount,
                 swap_source_amount,
                 swap_destination_amount,
-                TradeDirection::BtoA
+                TradeDirection::BtoA,
+                None
             );
         }
     }
@@ -584,7 +595,7 @@ mod tests {
             let swap_token_b_amount = swap_token_b_amount as u128;
             let token_b_price = token_b_price as u128;
 
-            let value = curve.normalized_value(swap_token_a_amount, swap_token_b_amount).unwrap();
+            let value = curve.normalized_value(swap_token_a_amount, swap_token_b_amount, None).unwrap();
 
             // Make sure we trade at least one of each token
             prop_assume!(pool_token_amount * value.to_imprecise().unwrap() >= 2 * token_b_price * pool_token_supply);
@@ -594,14 +605,15 @@ mod tests {
                     pool_token_supply,
                     swap_token_a_amount,
                     swap_token_b_amount,
-                    RoundDirection::Ceiling
+                    RoundDirection::Ceiling,
+                    None
                 )
                 .unwrap();
             let new_swap_token_a_amount = swap_token_a_amount + deposit_result.token_a_amount;
             let new_swap_token_b_amount = swap_token_b_amount + deposit_result.token_b_amount;
             let new_pool_token_supply = pool_token_supply + pool_token_amount;
 
-            let new_value = curve.normalized_value(new_swap_token_a_amount, new_swap_token_b_amount).unwrap();
+            let new_value = curve.normalized_value(new_swap_token_a_amount, new_swap_token_b_amount, None).unwrap();
 
             // the following inequality must hold:
             // new_value / new_pool_token_supply >= value / pool_token_supply
@@ -632,7 +644,7 @@ mod tests {
             let swap_token_b_amount = swap_token_b_amount as u128;
             let token_b_price = token_b_price as u128;
 
-            let value = curve.normalized_value(swap_token_a_amount, swap_token_b_amount).unwrap();
+            let value = curve.normalized_value(swap_token_a_amount, swap_token_b_amount, None).unwrap();
 
             // Make sure we trade at least one of each token
             prop_assume!(pool_token_amount * value.to_imprecise().unwrap() >= 2 * token_b_price * pool_token_supply);
@@ -644,6 +656,7 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Floor,
+                    None
                 )
                 .unwrap();
             prop_assume!(withdraw_result.token_a_amount <= swap_token_a_amount);
@@ -652,7 +665,7 @@ mod tests {
             let new_swap_token_b_amount = swap_token_b_amount - withdraw_result.token_b_amount;
             let new_pool_token_supply = pool_token_supply - pool_token_amount;
 
-            let new_value = curve.normalized_value(new_swap_token_a_amount, new_swap_token_b_amount).unwrap();
+            let new_value = curve.normalized_value(new_swap_token_a_amount, new_swap_token_b_amount, None).unwrap();
 
             // the following inequality must hold:
             // new_value / new_pool_token_supply >= value / pool_token_supply

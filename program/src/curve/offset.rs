@@ -69,6 +69,7 @@ impl CurveCalculator for OffsetCurve {
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
         round_direction: RoundDirection,
+        _timestamp: Option<u128>
     ) -> Option<TradingTokenResult> {
         let token_b_offset = self.token_b_offset as u128;
         pool_tokens_to_trading_tokens(
@@ -89,6 +90,7 @@ impl CurveCalculator for OffsetCurve {
         swap_token_b_amount: u128,
         pool_supply: u128,
         trade_direction: TradeDirection,
+        _timestamp: Option<u128>,
     ) -> Option<u128> {
         let token_b_offset = self.token_b_offset as u128;
         deposit_single_token_type(
@@ -109,6 +111,7 @@ impl CurveCalculator for OffsetCurve {
         pool_supply: u128,
         trade_direction: TradeDirection,
         round_direction: RoundDirection,
+        _timestamp: Option<u128>,
     ) -> Option<u128> {
         let token_b_offset = self.token_b_offset as u128;
         withdraw_single_token_type_exact_out(
@@ -121,7 +124,7 @@ impl CurveCalculator for OffsetCurve {
         )
     }
 
-    fn validate(&self) -> Result<(), SwapError> {
+    fn validate(&self, _timestamp: Option<u128>) -> Result<(), SwapError> {
         if self.token_b_offset == 0 {
             Err(SwapError::InvalidCurve)
         } else {
@@ -151,6 +154,7 @@ impl CurveCalculator for OffsetCurve {
         &self,
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
+        _timestamp: Option<u128>
     ) -> Option<PreciseNumber> {
         let token_b_offset = self.token_b_offset as u128;
         normalized_value(
@@ -366,6 +370,7 @@ mod tests {
                 TradeDirection::AtoB,
                 pool_supply,
                 CONVERSION_BASIS_POINTS_GUARANTEE,
+                None
             );
         }
     }
@@ -400,6 +405,7 @@ mod tests {
                 TradeDirection::BtoA,
                 pool_supply,
                 CONVERSION_BASIS_POINTS_GUARANTEE,
+                None
             );
         }
     }
@@ -433,6 +439,7 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Floor,
+                    None
                 )
                 .unwrap();
             prop_assume!(withdraw_result.token_b_amount <= swap_token_b_amount); // avoid overdrawing to 0 for calc
@@ -443,7 +450,8 @@ mod tests {
                 swap_token_a_amount,
                 swap_token_b_amount,
                 TradeDirection::AtoB,
-                CONVERSION_BASIS_POINTS_GUARANTEE
+                CONVERSION_BASIS_POINTS_GUARANTEE,
+                None
             );
             check_withdraw_token_conversion(
                 &curve,
@@ -452,7 +460,8 @@ mod tests {
                 swap_token_a_amount,
                 swap_token_b_amount,
                 TradeDirection::BtoA,
-                CONVERSION_BASIS_POINTS_GUARANTEE
+                CONVERSION_BASIS_POINTS_GUARANTEE,
+                None
             );
         }
     }
@@ -489,7 +498,8 @@ mod tests {
                 source_token_amount,
                 swap_source_amount,
                 swap_destination_amount,
-                TradeDirection::AtoB
+                TradeDirection::AtoB,
+                None
             );
         }
     }
@@ -517,7 +527,8 @@ mod tests {
                 source_token_amount,
                 swap_source_amount,
                 swap_destination_amount,
-                TradeDirection::BtoA
+                TradeDirection::BtoA,
+                None
             );
         }
     }
@@ -578,6 +589,7 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Floor,
+                    None
                 )
                 .unwrap();
             prop_assume!(withdraw_result.token_b_amount <= swap_token_b_amount); // avoid overdrawing to 0 for calc

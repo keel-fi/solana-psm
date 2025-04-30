@@ -117,6 +117,10 @@ pub enum SwapError {
     /// The pool fee account is invalid.
     #[error("The pool fee account is invalid")]
     InvalidFeeAccount,
+
+    /// The timestamp was not provided.
+    #[error("The timestamp is missing")]
+    MissingTimestamp
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {
@@ -199,6 +203,9 @@ impl PrintProgramError for SwapError {
             }
             SwapError::InvalidFeeAccount => {
                 msg!("Error: The pool fee account is invalid")
+            }
+            SwapError::MissingTimestamp => {
+                msg!("Error: Timestamp was not provided")
             }
         }
     }
