@@ -344,7 +344,7 @@ impl Processor {
         }
         fees.validate()?;
         swap_curve.calculator.validate(Some(Clock::get()?.unix_timestamp as u128))?;
-
+        msg!("after swap_curve.calculator.validate");
         let initial_amount = swap_curve.calculator.new_pool_supply();
 
         Self::token_mint_to(

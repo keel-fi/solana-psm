@@ -7,12 +7,7 @@ use helpers::{
     PROGRAM_ID
 };
 use solana_sdk::{
-    instruction::{AccountMeta, Instruction}, 
-    program_pack::Pack, 
-    pubkey::Pubkey, 
-    signature::Keypair, 
-    signer::Signer, 
-    transaction::Transaction,
+    clock::Clock, instruction::{AccountMeta, Instruction}, program_pack::Pack, pubkey::Pubkey, signature::Keypair, signer::Signer, transaction::Transaction
 };
 use spl_token_swap::curve::{
     redemption_rate::RedemptionRateCurve, 
@@ -73,12 +68,18 @@ async fn test_aggregated_oracle_curve_authority_update() {
     let mut fees_buf = vec![0; 64];
     fees.pack_into_slice(&mut fees_buf);
 
+    let clock: Clock = context
+        .banks_client
+        .get_sysvar::<Clock>()
+        .await
+        .unwrap();
+
     let curve_for_creation = RedemptionRateCurve {
         update_authority: authority_keypair.pubkey(),
         ray: RAY,
         max_ssr: 0,
         ssr: RAY,
-        rho: 0,
+        rho: clock.unix_timestamp as u128,
         chi: RAY
     };
 
@@ -122,130 +123,123 @@ async fn test_aggregated_oracle_curve_authority_update() {
 
     assert_eq!(created_curve, curve_for_creation);
 
-    // update curve price correctly with valid authority
+    // update curve with valid authority
 
-    // let update_price_accounts = vec![
-    //     // swap info
-    //     AccountMeta::new(swap_info, false),
-    //     // update_authority
-    //     AccountMeta::new_readonly(authority_keypair.pubkey(), true),
-    // ];
+    let update_curve_accounts = vec![
+        // swap info
+        AccountMeta::new(swap_info, false),
+        // update_authority
+        AccountMeta::new_readonly(authority_keypair.pubkey(), true),
+    ];
 
-    // let new_token_price_numerator: u64 = 2_000_000_000;
-    // let new_token_price_denominator: u64 = 1_000_000_000;
-    // let new_update_timestamp: i64 = 1_000;
+    let new_ssr: u128 = 2 * RAY;
+    let new_rho: u128 = clock.unix_timestamp as u128;
+    let new_chi: u128 = 2 * RAY;
 
-    // let update_aggregated_oracle_curve_data = vec![
-    //     // discriminator for SwapInstruction::UpdateAggregatedOracleCurvePrice
-    //     vec![6],
-    //     new_token_price_numerator.to_le_bytes().to_vec(),
-    //     new_token_price_denominator.to_le_bytes().to_vec(),
-    //     new_update_timestamp.to_le_bytes().to_vec(),
-    // ].concat();
+    let update_curve_data = vec![
+        // discriminator for SwapInstruction::SetRates
+        vec![6],
+        new_ssr.to_le_bytes().to_vec(),
+        new_rho.to_le_bytes().to_vec(),
+        new_chi.to_le_bytes().to_vec(),
+    ].concat();
 
-    // let update_price_ix = Instruction {
-    //     program_id: PROGRAM_ID,
-    //     accounts: update_price_accounts.clone(),
-    //     data: update_aggregated_oracle_curve_data
-    // };
+    let update_curve_ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: update_curve_accounts.clone(),
+        data: update_curve_data
+    };
 
-    // let update_price_tx = Transaction::new_signed_with_payer(
-    //     &[update_price_ix], 
-    //     Some(&context.payer.pubkey()), 
-    //     &[&context.payer , &authority_keypair], 
-    //     context.last_blockhash
-    // );
+    let update_curve_tx = Transaction::new_signed_with_payer(
+        &[update_curve_ix], 
+        Some(&context.payer.pubkey()), 
+        &[&context.payer , &authority_keypair], 
+        context.last_blockhash
+    );
 
-    // let result = context.banks_client
-    //     .process_transaction(update_price_tx)
-    //     .await;
+    let result = context.banks_client
+        .process_transaction(update_curve_tx)
+        .await;
 
-    // assert!(result.is_ok());
+    assert!(result.is_ok());
 
-    // let updated_curve = fetch_aggregated_oracle_swap_curve(
-    //     &mut context.banks_client, 
-    //     &swap_info
-    // ).await;
+    let updated_curve = fetch_redemption_rate_curve(
+        &mut context.banks_client, 
+        &swap_info
+    ).await;
     
-    // assert_eq!(updated_curve.token_b_price_numerator, new_token_price_numerator);
-    // assert_eq!(updated_curve.token_b_price_denominator, new_token_price_denominator);
-    // assert_eq!(updated_curve.max_staleness_seconds, u32::MAX);
-    // assert_eq!(updated_curve.last_update, new_update_timestamp);
-    // assert_eq!(updated_curve.oracle_update_authority, authority_keypair.pubkey());
+    assert_eq!(updated_curve.ssr, new_ssr);
+    assert_eq!(updated_curve.rho, new_rho);
+    assert_eq!(updated_curve.chi, new_chi);
 
-    // // fails at updating curve price with old oracle update
-    // let invalid_new_update_timestamp: i64 = 100;
+    // fails at updating curve price with invalid rho
+    let invalid_new_rho = clock.unix_timestamp as u128 - 1;
     
-    // let outdated_update_aggregated_oracle_curve_data = vec![
-    //     // discriminator for SwapInstruction::UpdateAggregatedOracleCurvePrice
-    //     vec![6],
-    //     new_token_price_numerator.to_le_bytes().to_vec(),
-    //     new_token_price_denominator.to_le_bytes().to_vec(),
-    //     invalid_new_update_timestamp.to_le_bytes().to_vec(),
-    // ].concat();
+    let invalid_rho_data = vec![
+        // discriminator for SwapInstruction::UpdateAggregatedOracleCurvePrice
+        vec![6],
+        new_ssr.to_le_bytes().to_vec(),
+        invalid_new_rho.to_le_bytes().to_vec(),
+        new_chi.to_le_bytes().to_vec(),
+    ].concat();
 
-    // let outdated_update_price_ix = Instruction {
-    //     program_id: PROGRAM_ID,
-    //     accounts: update_price_accounts,
-    //     data: outdated_update_aggregated_oracle_curve_data
-    // };
+    let invalid_ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: update_curve_accounts,
+        data: invalid_rho_data
+    };
 
-    // let outdated_update_price_tx = Transaction::new_signed_with_payer(
-    //     &[outdated_update_price_ix], 
-    //     Some(&context.payer.pubkey()), 
-    //     &[&context.payer , &authority_keypair], 
-    //     context.last_blockhash
-    // );
+    let invalid_tx = Transaction::new_signed_with_payer(
+        &[invalid_ix], 
+        Some(&context.payer.pubkey()), 
+        &[&context.payer , &authority_keypair], 
+        context.last_blockhash
+    );
 
-    // let result = context.banks_client
-    //     .process_transaction(outdated_update_price_tx)
-    //     .await;
+    let result = context.banks_client
+        .process_transaction(invalid_tx)
+        .await;
 
-    // assert!(result.is_err());
+    assert!(result.is_err());
 
-    // // fails at updating curve price with wrong signer
+    // // fails at updating curve price with unauthorized signer
 
-    // let invalid_update_price_accounts = vec![
-    //     // swap info
-    //     AccountMeta::new(swap_info, false),
-    //     // update_authority
-    //     AccountMeta::new_readonly(fake_authority_keypair.pubkey(), true),
-    // ];
+    let unauthorized_update_accounts = vec![
+        // swap info
+        AccountMeta::new(swap_info, false),
+        // update_authority
+        AccountMeta::new_readonly(fake_authority_keypair.pubkey(), true),
+    ];
 
-    // let new_token_price_numerator: u64 = 4_000_000_000;
-    // let new_token_price_denominator: u64 = 2_000_000_000;
+    let new_ssr: u128 = 2 * RAY;
+    let new_rho: u128 = clock.unix_timestamp as u128;
+    let new_chi: u128 = 2 * RAY;
 
-    // let update_aggregated_oracle_curve_data = vec![
-    //     // discriminator for SwapInstruction::UpdateAggregatedOracleCurvePrice
-    //     vec![6],
-    //     new_token_price_numerator.to_le_bytes().to_vec(),
-    //     new_token_price_denominator.to_le_bytes().to_vec(),
-    //     new_update_timestamp.to_le_bytes().to_vec()
-    // ].concat();
+    let update_data = vec![
+        // discriminator for SwapInstruction::UpdateAggregatedOracleCurvePrice
+        vec![6],
+        new_ssr.to_le_bytes().to_vec(),
+        new_rho.to_le_bytes().to_vec(),
+        new_chi.to_le_bytes().to_vec(),
 
-    // let invalid_update_price_ix = Instruction {
-    //     program_id: PROGRAM_ID,
-    //     accounts: invalid_update_price_accounts,
-    //     data: update_aggregated_oracle_curve_data
-    // };
+    ].concat();
 
-    // let invalid_update_price_tx = Transaction::new_signed_with_payer(
-    //     &[invalid_update_price_ix], 
-    //     Some(&context.payer.pubkey()), 
-    //     &[&context.payer, &fake_authority_keypair], 
-    //     context.last_blockhash
-    // );
+    let invalid_update_price_ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: unauthorized_update_accounts,
+        data: update_data
+    };
 
-    // let result = context.banks_client
-    //     .process_transaction(invalid_update_price_tx)
-    //     .await;
+    let invalid_update_price_tx = Transaction::new_signed_with_payer(
+        &[invalid_update_price_ix], 
+        Some(&context.payer.pubkey()), 
+        &[&context.payer, &fake_authority_keypair], 
+        context.last_blockhash
+    );
 
-    // assert!(result.is_err());
+    let result = context.banks_client
+        .process_transaction(invalid_update_price_tx)
+        .await;
 
-    // let curve_after_invalid_update = fetch_aggregated_oracle_swap_curve(
-    //     &mut context.banks_client, 
-    //     &swap_info
-    // ).await;
-    
-    // assert_eq!(updated_curve, curve_after_invalid_update);
+    assert!(result.is_err());
 }
