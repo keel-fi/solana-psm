@@ -122,13 +122,13 @@ pub enum SwapError {
     #[error("The timestamp is missing")]
     MissingTimestamp,
     /// Invalid Rho.
-    #[error("The timestamp is missing")]
+    #[error("Invalid Rho")]
     InvalidRho,
     /// Invalid Ssr.
-    #[error("The timestamp is missing")]
+    #[error("Invalid Ssr")]
     InvalidSsr,
     /// Invalid Chi.
-    #[error("The timestamp is missing")]
+    #[error("Invalid Chi")]
     InvalidChi
 }
 impl From<SwapError> for ProgramError {
