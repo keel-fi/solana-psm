@@ -528,7 +528,115 @@ mod tests {
             chi,
         }
     }
-     
+
+    proptest! {
+        #[test]
+        fn test_susds_usds_precision_slippage_scaled(
+            multiplier in 1u64..100_000u64, // up to 100,000 sUSDS
+        ) {
+            let ray = RAY;
+            let ssr = RAY;
+            let rho = 0;
+    
+            // Price: 1 sUSDS = 1.04860 USDS → chi = 1.04860 * RAY
+            let chi = 1_048_600_000_000_000_000_000_000_000u128;
+            let curve = create_test_curve(ssr, rho, chi, 0);
+    
+            let unit = 1_000_000u128; // 1 sUSDS
+            let source_amount = unit * multiplier as u128;
+    
+            // Expected USDS: 1.04860 * source_amount
+            let expected_destination = source_amount
+                .checked_mul(1_048_600u128)
+                .unwrap()
+                .checked_div(1_000_000u128)
+                .unwrap();
+    
+            // Setup pool with enough liquidity
+            let swap_token_b_amount = 1_000_000_000_000u128; // sUSDS
+            let swap_token_a_amount = U256::from(swap_token_b_amount)
+                .checked_mul(U256::from(chi))
+                .unwrap()
+                .checked_div(U256::from(ray))
+                .unwrap()
+                .as_u128(); // USDS
+    
+            let result = curve
+                .swap_without_fees(
+                    source_amount,
+                    swap_token_b_amount,
+                    swap_token_a_amount,
+                    TradeDirection::BtoA,
+                    Some(0),
+                )
+                .unwrap();
+    
+            prop_assert_eq!(result.source_amount_swapped, source_amount);
+            prop_assert_eq!(result.destination_amount_swapped, expected_destination);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_usds_susds_precision_slippage_scaled(
+            multiplier in 1u64..100_000u64,
+        ) {
+            let ray = RAY;
+            let ssr = RAY;
+            let rho = 0;
+            let chi = 1_048_600_000_000_000_000_000_000_000u128; // 1.04860 * RAY
+    
+            let curve = create_test_curve(ssr, rho, chi, 0);
+    
+            let unit = 1_000_000u128;
+            let source_amount = unit * multiplier as u128;
+    
+            let expected_destination = U256::from(source_amount)
+                .checked_mul(U256::from(ray))
+                .unwrap()
+                .checked_div(U256::from(chi))
+                .unwrap()
+                .as_u128();
+    
+            // Balanced pool
+            let swap_token_a_amount = 1_000_000_000_000u128; // USDS
+            let swap_token_b_amount = U256::from(swap_token_a_amount)
+                .checked_mul(U256::from(ray))
+                .unwrap()
+                .checked_div(U256::from(chi))
+                .unwrap()
+                .as_u128(); // sUSDS
+    
+            let result = curve
+                .swap_without_fees(
+                    source_amount,
+                    swap_token_a_amount,
+                    swap_token_b_amount,
+                    TradeDirection::AtoB,
+                    Some(0),
+                )
+                .unwrap();
+    
+            println!("result: {:?}", result);
+            // prop_assert_eq!(result.source_amount_swapped, source_amount);
+    
+            let actual = result.destination_amount_swapped;
+            let diff = if actual > expected_destination {
+                actual - expected_destination
+            } else {
+                expected_destination - actual
+            };
+    
+            prop_assert!(
+                diff <= 1,
+                "slippage too high: got {}, expected {}, diff {}",
+                actual,
+                expected_destination,
+                diff
+            );
+        }
+    }
+
     #[test]
     fn test_set_rates_rho_decreasing_boundary() {
         let curve = create_test_curve(
