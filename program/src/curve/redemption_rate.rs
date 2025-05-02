@@ -65,8 +65,8 @@ pub fn trading_tokens_to_pool_tokens(
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RedemptionRateCurve {
     /// Authority allowed to update the SSR parameters.
-    pub authority: Pubkey,
-    /// Fixed-point scaling factor, typically 1e27 (RAY).
+    pub update_authority: Pubkey,
+    /// Fixed-point scaling factor.
     pub ray: u128,
     /// Maximum allowed SSR value.
     pub max_ssr: u128,
@@ -92,7 +92,8 @@ impl RedemptionRateCurve {
         Some(rate)
     }
 
-    fn _rpow(
+    /// Custom pow function
+    pub fn _rpow(
         &self,
         x: u128,
         n: u128,
@@ -155,6 +156,71 @@ impl RedemptionRateCurve {
             }
         }
         Some(z)
+    }
+
+    /// Set new rates and returns a new RedemptionRateCurve
+    pub fn set_rates(
+        &self,
+        ssr: u128,
+        rho: u128,
+        chi: u128,
+        current_timestamp: u128,
+    ) -> Result<RedemptionRateCurve, ProgramError> {
+        if rho > current_timestamp {
+            return Err(SwapError::InvalidRho.into())
+        }
+        if ssr < self.ray {
+            return Err(SwapError::InvalidSsr.into())
+        }
+        if self.max_ssr != 0 && ssr > self.max_ssr {
+            return Err(SwapError::InvalidSsr.into())
+        }
+
+        let new_calculator = if self.rho == 0 {
+            RedemptionRateCurve {
+                update_authority: self.update_authority,
+                ray: self.ray,
+                max_ssr: self.max_ssr,
+                ssr,
+                rho,
+                chi
+            }
+        } else {
+            if rho < self.rho {
+                return Err(SwapError::InvalidRho.into())
+            }
+            if chi < self.chi {
+                return Err(SwapError::InvalidChi.into())
+            }
+            if self.max_ssr != 0 {
+                let duration = rho
+                    .checked_sub(self.rho)
+                    .ok_or(ProgramError::ArithmeticOverflow)?;
+                
+                let chi_max = self._rpow(self.max_ssr, duration)
+                    .ok_or(SwapError::CalculationFailure)?
+                    .checked_mul(U256::from(self.chi))
+                    .ok_or(ProgramError::ArithmeticOverflow)?
+                    .checked_div(U256::from(self.ray))
+                    .ok_or(ProgramError::ArithmeticOverflow)?;
+                
+    
+                if U256::from(chi) > chi_max {
+                    return Err(SwapError::InvalidChi.into())
+                }
+            }
+    
+            RedemptionRateCurve {
+                update_authority: self.update_authority,
+                ray: self.ray,
+                max_ssr: self.max_ssr,
+                ssr,
+                rho,
+                chi
+            }
+        };
+
+        Ok(new_calculator)
     }
 }
 
@@ -382,7 +448,7 @@ impl Pack for RedemptionRateCurve {
     }
 
     fn unpack_from_slice(input: &[u8]) -> Result<RedemptionRateCurve, ProgramError> {
-        let authority = array_ref![input, 0, 32];
+        let update_authority = array_ref![input, 0, 32];
         let ray = array_ref![input, 32, 16];
         let max_ssr = array_ref![input, 48, 16];
         let ssr = array_ref![input, 64, 16];
@@ -390,7 +456,7 @@ impl Pack for RedemptionRateCurve {
         let chi = array_ref![input, 96, 16];
 
         Ok(Self {
-            authority: Pubkey::new_from_array(*authority),
+            update_authority: Pubkey::new_from_array(*update_authority),
             ray: u128::from_le_bytes(*ray),
             max_ssr: u128::from_le_bytes(*max_ssr),
             ssr: u128::from_le_bytes(*ssr),
@@ -402,14 +468,14 @@ impl Pack for RedemptionRateCurve {
 
 impl DynPack for RedemptionRateCurve {
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let (authority, rest) = output.split_at_mut(32);
+        let (update_authority, rest) = output.split_at_mut(32);
         let (ray, rest) = rest.split_at_mut(16);
         let (max_ssr, rest) = rest.split_at_mut(16);
         let (ssr, rest) = rest.split_at_mut(16);
         let (rho, rest) = rest.split_at_mut(16);
         let (chi, _) = rest.split_at_mut(16);
 
-        authority.copy_from_slice(&self.authority.to_bytes());
+        update_authority.copy_from_slice(&self.update_authority.to_bytes());
         ray.copy_from_slice(&self.ray.to_le_bytes());
         max_ssr.copy_from_slice(&self.max_ssr.to_le_bytes());
         ssr.copy_from_slice(&self.ssr.to_le_bytes());
@@ -424,7 +490,11 @@ mod tests {
         super::*,
         crate::curve::calculator::{
             test::{
-                check_curve_value_from_swap, check_deposit_token_conversion, check_withdraw_token_conversion, total_and_intermediate, CONVERSION_BASIS_POINTS_GUARANTEE
+                check_curve_value_from_swap, 
+                check_deposit_token_conversion, 
+                check_withdraw_token_conversion, 
+                total_and_intermediate, 
+                CONVERSION_BASIS_POINTS_GUARANTEE
             },
             INITIAL_SWAP_POOL_AMOUNT,
         },
@@ -432,20 +502,372 @@ mod tests {
     };
 
     const RAY: u128 = 10u128.pow(27);
+    const FIVE_PCT_APY_SSR: u128 = 1_000_000_001_547_125_957_863_212_448;
+    const ONE_HUNDRED_PCT_APY_SSR: u128 = 1_000_000_021_979_553_151_239_153_020;
+    const SECONDS_PER_YEAR: u128 = 365 * 24 * 60 * 60;
+
+    // Initial timestamp after skipping 1 year
+    const INITIAL_TIMESTAMP: u128 = SECONDS_PER_YEAR;
+    // Timestamp after skipping another year
+    const SECOND_TIMESTAMP: u128 = 2 * SECONDS_PER_YEAR;
+
+
 
     fn create_test_curve(
         ssr: u128,
         rho: u128,
         chi: u128,
+        max_ssr: u128
     ) -> RedemptionRateCurve {
         RedemptionRateCurve {
-            authority: Pubkey::default(),
+            update_authority: Pubkey::default(),
             ray: RAY, 
-            max_ssr: 0,
+            max_ssr,
             ssr,
             rho,
             chi,
         }
+    }
+     
+    #[test]
+    fn test_set_rates_rho_decreasing_boundary() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            ONE_HUNDRED_PCT_APY_SSR
+        );
+
+        let curve = curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            INITIAL_TIMESTAMP, 
+            RAY, 
+            INITIAL_TIMESTAMP+1
+        ).unwrap();
+        
+        // Should fail when rho decreases
+        assert!(curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            INITIAL_TIMESTAMP - 1,
+            RAY, 
+            INITIAL_TIMESTAMP+1
+        )
+        .is_err());
+        
+        // Should succeed when rho stays the same
+        curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            INITIAL_TIMESTAMP,
+            RAY, 
+            INITIAL_TIMESTAMP+1
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_set_rates_rho_in_future_boundary() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Should fail when rho is in the future
+        assert!(curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            INITIAL_TIMESTAMP + 1, 1_030_000_000_000_000_000_000_000_000, 
+            INITIAL_TIMESTAMP
+        )
+        .is_err());
+        
+        // Should succeed when rho is current
+        curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            INITIAL_TIMESTAMP, 
+            1_030_000_000_000_000_000_000_000_000, 
+            INITIAL_TIMESTAMP
+        ).unwrap();
+    }
+
+    #[test]
+    fn test_set_rates_ssr_below_ray_boundary() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Should fail when ssr < RAY
+        assert!(curve.set_rates(
+            RAY - 1, 
+            INITIAL_TIMESTAMP, 
+            1_030_000_000_000_000_000_000_000_000, 
+            INITIAL_TIMESTAMP
+        ).is_err());
+        
+        // Should succeed when ssr == RAY
+        curve.set_rates(
+            RAY, 
+            INITIAL_TIMESTAMP, 
+            1_030_000_000_000_000_000_000_000_000, 
+            INITIAL_TIMESTAMP
+        ).unwrap();
+    }
+
+    #[test]
+    fn test_set_rates_ssr_above_max_boundary() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            ONE_HUNDRED_PCT_APY_SSR
+        );
+        
+        // Should fail when ssr > max_ssr
+        assert!(curve.set_rates(
+            ONE_HUNDRED_PCT_APY_SSR + 1, 
+            INITIAL_TIMESTAMP, 
+            1_030_000_000_000_000_000_000_000_000, 
+            INITIAL_TIMESTAMP
+        )
+        .is_err());
+        
+        // Should succeed when ssr == max_ssr
+        curve.set_rates(
+            ONE_HUNDRED_PCT_APY_SSR, 
+            INITIAL_TIMESTAMP, 
+            1_030_000_000_000_000_000_000_000_000, 
+            INITIAL_TIMESTAMP
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_set_rates_very_high_ssr_no_max() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Should succeed with very high SSR when no max is set
+        curve.set_rates(
+            2 * RAY, 
+            INITIAL_TIMESTAMP, 
+            1_030_000_000_000_000_000_000_000_000, 
+            INITIAL_TIMESTAMP
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_set_rates_chi_decreasing_boundary() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Initial setup
+        let curve = curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            INITIAL_TIMESTAMP, 
+            RAY, 
+            INITIAL_TIMESTAMP
+        ).unwrap();
+        
+        // Should fail when chi decreases
+        assert!(curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            SECOND_TIMESTAMP, RAY - 1, 
+            SECOND_TIMESTAMP
+        ).is_err());
+        
+        // Should succeed when chi stays the same
+        curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            SECOND_TIMESTAMP, 
+            RAY, 
+            SECOND_TIMESTAMP
+        ).unwrap();
+    }
+
+    #[test]
+    fn test_set_rates_chi_growth_too_fast_boundary() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            ONE_HUNDRED_PCT_APY_SSR
+        );
+                
+        // Set initial values
+        let curve = curve.set_rates(FIVE_PCT_APY_SSR, INITIAL_TIMESTAMP, RAY, INITIAL_TIMESTAMP).unwrap();
+
+        // Calculate max chi growth for 1 year at max SSR
+        let chi_max = curve._rpow(ONE_HUNDRED_PCT_APY_SSR, SECONDS_PER_YEAR).unwrap();
+        let chi_max_u128 = chi_max.as_u128();
+        
+        // Should fail when chi grows too fast
+        assert!(curve.set_rates(FIVE_PCT_APY_SSR, SECOND_TIMESTAMP, chi_max_u128 + 1, SECOND_TIMESTAMP).is_err());
+        
+        // Should succeed at max allowed chi
+        curve.set_rates(FIVE_PCT_APY_SSR, SECOND_TIMESTAMP, chi_max_u128, SECOND_TIMESTAMP).unwrap();
+    }
+
+    #[test]
+    fn test_set_rates_chi_large_growth_no_max_ssr() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Should succeed with large chi growth when no max SSR is set
+        curve.set_rates(FIVE_PCT_APY_SSR, INITIAL_TIMESTAMP, 100_000 * RAY, INITIAL_TIMESTAMP).unwrap();
+    }
+
+    #[test]
+    fn test_rpow_zero_base() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // 0^0 should return RAY
+        assert_eq!(curve._rpow(0, 0).unwrap(), U256::from(RAY));
+        
+        // 0^n where n > 0 should return 0
+        assert_eq!(curve._rpow(0, 1).unwrap(), U256::zero());
+        assert_eq!(curve._rpow(0, 100).unwrap(), U256::zero());
+    }
+
+    #[test]
+    fn test_rpow_zero_exponent() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // x^0 should return RAY for any x > 0
+        assert_eq!(curve._rpow(RAY, 0).unwrap(), U256::from(RAY));
+        assert_eq!(curve._rpow(2 * RAY, 0).unwrap(), U256::from(RAY));
+        assert_eq!(curve._rpow(FIVE_PCT_APY_SSR, 0).unwrap(), U256::from(RAY));
+    }
+
+    #[test]
+    fn test_rpow_one_exponent() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // x^1 should return x
+        assert_eq!(curve._rpow(RAY, 1).unwrap(), U256::from(RAY));
+        assert_eq!(curve._rpow(2 * RAY, 1).unwrap(), U256::from(2 * RAY));
+        assert_eq!(curve._rpow(FIVE_PCT_APY_SSR, 1).unwrap(), U256::from(FIVE_PCT_APY_SSR));
+    }
+
+    #[test]
+    fn test_rpow_small_exponents() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Test with small exponents (2, 3, 4)
+        let base = RAY + 1; // Slightly above RAY
+        let exp2 = curve._rpow(base, 2).unwrap();
+        let exp3 = curve._rpow(base, 3).unwrap();
+        let exp4 = curve._rpow(base, 4).unwrap();
+        
+        // Verify exponential growth
+        assert!(exp3 > exp2);
+        assert!(exp4 > exp3);
+        
+        // Verify the values are reasonable
+        assert!(exp2 < U256::from(base) * U256::from(2));
+        assert!(exp3 < U256::from(base) * U256::from(3));
+        assert!(exp4 < U256::from(base) * U256::from(4));
+    }
+
+    #[test]
+    fn test_rpow_large_exponents() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Test with large exponents (1 year, 2 years)
+        let exp1y = curve._rpow(FIVE_PCT_APY_SSR, SECONDS_PER_YEAR).unwrap();
+        let exp2y = curve._rpow(FIVE_PCT_APY_SSR, 2 * SECONDS_PER_YEAR).unwrap();
+        
+        // Verify exponential growth
+        assert!(exp2y > exp1y);
+        
+        // Verify the values are reasonable (5% APY over 1 year)
+        let expected_min = U256::from(RAY) + (U256::from(RAY) / U256::from(20)); // 5% growth
+
+        // Check that exp1y is within 100_000_000_000 of expected_min
+        let diff = if exp1y > expected_min {
+            exp1y - expected_min
+        } else {
+            expected_min - exp1y
+        };
+        assert!(diff <= U256::from(100_000_000_000u128), "Difference too large: {:?}", diff);
+    }
+
+    #[test]
+    fn test_rpow_overflow_protection() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Test with very large base and exponent -- 100% APY for 10 years
+        let large_base =  ONE_HUNDRED_PCT_APY_SSR;
+        let large_exp = SECONDS_PER_YEAR * 10;
+        
+        // This should not overflow due to U256 usage
+        let result = curve._rpow(large_base, large_exp).unwrap();
+        assert!(result > U256::zero());
+    }
+
+    #[test]
+    fn test_rpow_rounding() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Test with values that require rounding
+        let base = RAY + 1;
+        let exp = 2;
+        
+        let result = curve._rpow(base, exp).unwrap();
+        
+        // Verify the result is properly rounded
+        let expected = (U256::from(base) * U256::from(base) + U256::from(RAY) / U256::from(2)) / U256::from(RAY);
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -454,7 +876,7 @@ mod tests {
         let swap_destination_amount: u128 = 0;
         let source_amount: u128 = 100;
 
-        let curve = create_test_curve(RAY, 0, RAY);
+        let curve = create_test_curve(RAY, 0, RAY, 0);
 
         let expected_result = SwapWithoutFeesResult {
             source_amount_swapped: source_amount,
@@ -490,7 +912,7 @@ mod tests {
         let rho = 0;
         let chi = RAY;
 
-        let curve = create_test_curve(ssr, rho, chi);
+        let curve = create_test_curve(ssr, rho, chi, 0);
 
         let mut packed = [0u8; RedemptionRateCurve::LEN];
         Pack::pack_into_slice(&curve, &mut packed[..]);
@@ -518,7 +940,7 @@ mod tests {
         let ssr = RAY; // fixed 1.0 rate
         let rho = 0;
 
-        let curve = create_test_curve(ssr, rho, chi);
+        let curve = create_test_curve(ssr, rho, chi, 0);
 
         // price too low
         let bad_result = curve.swap_without_fees(
@@ -562,7 +984,7 @@ mod tests {
         let token_b_amount = 1u128;
         let token_a_amount = token_b_price;
 
-        let curve = create_test_curve(1, 0, token_b_price);
+        let curve = create_test_curve(1, 0, token_b_price, 0);
 
         // fails because the source_amount is not enough
         let bad_result = curve.swap_without_fees(
@@ -612,7 +1034,7 @@ mod tests {
             let rho = 0;
             let chi = chi_raw * RAY;
 
-            let curve = create_test_curve(ssr, rho, chi);
+            let curve = create_test_curve(ssr, rho, chi, 0);
             
             let token_b_price = chi / RAY;
             let source_token_amount = source_token_amount as u128;
@@ -654,7 +1076,7 @@ mod tests {
             let rho = 0;
             let chi = chi_raw * RAY;
 
-            let curve = create_test_curve(ssr, rho, chi);
+            let curve = create_test_curve(ssr, rho, chi, 0);
             
             let token_b_price = chi / RAY;
             let source_token_amount = source_token_amount as u128;
@@ -691,7 +1113,7 @@ mod tests {
             let chi = chi_raw * RAY;
             let token_b_price = chi / RAY;
 
-            let curve = create_test_curve(ssr, rho, chi);
+            let curve = create_test_curve(ssr, rho, chi, 0);
 
             let pool_token_amount = pool_token_amount as u128;
             let pool_token_supply = pool_token_supply as u128;
@@ -765,7 +1187,7 @@ mod tests {
             prop_assume!(source_token_amount / token_b_price >= U256::from(1));
             // Make sure there's enough tokens to get back on the other side
             prop_assume!(source_token_amount / token_b_price <= swap_destination_amount);
-            let curve = create_test_curve(ssr, rho, chi);
+            let curve = create_test_curve(ssr, rho, chi, 0);
             check_curve_value_from_swap(
                 &curve,
                 source_token_amount.as_u128(),
@@ -791,7 +1213,7 @@ mod tests {
             let chi = chi_raw * RAY;
             let token_b_price = chi / RAY;
 
-            let curve = create_test_curve(ssr, rho, chi);
+            let curve = create_test_curve(ssr, rho, chi, 0);
 
             let pool_token_amount = pool_token_amount as u128;
             let swap_token_a_amount = swap_token_a_amount as u128;
@@ -850,7 +1272,7 @@ mod tests {
             let chi = chi_raw * RAY;
             let token_b_price = chi / RAY;
 
-            let curve = create_test_curve(ssr, rho, chi);
+            let curve = create_test_curve(ssr, rho, chi, 0);
 
             let pool_token_amount = pool_token_amount as u128;
             let pool_token_supply = pool_token_supply as u128;

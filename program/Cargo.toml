@@ -30,6 +30,8 @@ proptest = "1.6"
 roots = "0.0.8"
 solana-sdk = "2.1.0"
 test-case = "3.3"
+solana-program-test = "2.1.11"
+tokio = "1.41.1"
 
 [lib]
 crate-type = ["cdylib", "lib"]

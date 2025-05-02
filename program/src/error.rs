@@ -120,7 +120,16 @@ pub enum SwapError {
 
     /// The timestamp was not provided.
     #[error("The timestamp is missing")]
-    MissingTimestamp
+    MissingTimestamp,
+    /// Invalid Rho.
+    #[error("The timestamp is missing")]
+    InvalidRho,
+    /// Invalid Ssr.
+    #[error("The timestamp is missing")]
+    InvalidSsr,
+    /// Invalid Chi.
+    #[error("The timestamp is missing")]
+    InvalidChi
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {
@@ -206,6 +215,15 @@ impl PrintProgramError for SwapError {
             }
             SwapError::MissingTimestamp => {
                 msg!("Error: Timestamp was not provided")
+            },
+            SwapError::InvalidSsr => {
+                msg!("Error: Invalid Ssr")
+            }, 
+            SwapError::InvalidRho => {
+                msg!("Error: Invalid Rho")
+            },
+            SwapError::InvalidChi => {
+                msg!("Error: Invalid Chi")
             }
         }
     }

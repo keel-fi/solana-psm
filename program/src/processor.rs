@@ -2,18 +2,13 @@
 
 use {
     crate::{
-        constraints::{SwapConstraints, SWAP_CONSTRAINTS},
-        curve::{
+        constraints::{SwapConstraints, SWAP_CONSTRAINTS}, curve::{
             base::SwapCurve,
             calculator::{RoundDirection, TradeDirection},
             fees::Fees,
-        },
-        error::SwapError,
-        instruction::{
-            DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Initialize, Swap,
-            SwapInstruction, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut,
-        },
-        state::{SwapState, SwapV1, SwapVersion},
+        }, error::SwapError, instruction::{
+            DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Initialize, SetRates, Swap, SwapInstruction, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut
+        }, redemption_rate_processor::process_curve_update, state::{SwapState, SwapV1, SwapVersion}
     },
     num_traits::FromPrimitive,
     solana_program::{
@@ -1251,6 +1246,22 @@ impl Processor {
                     destination_token_amount,
                     maximum_pool_token_amount,
                     accounts,
+                )
+            }
+            SwapInstruction::SetRates(
+                SetRates {
+                    ssr,
+                    rho,
+                    chi,
+                }
+            ) => {
+                msg!("Instruction: SetRates");
+                process_curve_update(
+                    program_id, 
+                    accounts, 
+                    ssr, 
+                    rho, 
+                    chi
                 )
             }
         }
