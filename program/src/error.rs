@@ -117,6 +117,19 @@ pub enum SwapError {
     /// The pool fee account is invalid.
     #[error("The pool fee account is invalid")]
     InvalidFeeAccount,
+
+    /// The timestamp was not provided.
+    #[error("The timestamp is missing")]
+    MissingTimestamp,
+    /// Invalid Rho.
+    #[error("Invalid Rho")]
+    InvalidRho,
+    /// Invalid Ssr.
+    #[error("Invalid Ssr")]
+    InvalidSsr,
+    /// Invalid Chi.
+    #[error("Invalid Chi")]
+    InvalidChi
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {
@@ -199,6 +212,18 @@ impl PrintProgramError for SwapError {
             }
             SwapError::InvalidFeeAccount => {
                 msg!("Error: The pool fee account is invalid")
+            }
+            SwapError::MissingTimestamp => {
+                msg!("Error: Timestamp was not provided")
+            },
+            SwapError::InvalidSsr => {
+                msg!("Error: Invalid Ssr")
+            }, 
+            SwapError::InvalidRho => {
+                msg!("Error: Invalid Rho")
+            },
+            SwapError::InvalidChi => {
+                msg!("Error: Invalid Chi")
             }
         }
     }
