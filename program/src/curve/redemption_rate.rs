@@ -93,6 +93,8 @@ impl RedemptionRateCurve {
     }
 
     /// Custom pow function
+    /// Reference implementation:
+    /// https://github.com/sparkdotfi/xchain-ssr-oracle/blob/0593279e643285bd4d54e23e37a050e0cad215ce/src/SSROracleBase.sol#L123-L146
     pub fn _rpow(
         &self,
         x: u128,
@@ -102,7 +104,6 @@ impl RedemptionRateCurve {
         let x_u256 = U256::from(x);
         let n_u256 = U256::from(n);
         let ray_u256 = U256::from(self.ray);
-        let half = ray_u256 / U256::from(2);
 
         if x_u256 == U256::zero() {
             if n_u256 == U256::zero() {
@@ -111,6 +112,7 @@ impl RedemptionRateCurve {
                 z = U256::zero();
             }
         } else {
+            let half = ray_u256 / U256::from(2);
             let n_mod_2 = n_u256 % U256::from(2);
             if n_mod_2 == U256::zero() {
                 z = ray_u256;

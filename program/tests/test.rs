@@ -26,7 +26,7 @@ mod helpers;
 const RAY: u128 = 10u128.pow(27);
 
 #[tokio::test]
-async fn test_aggregated_oracle_curve_authority_update() {
+async fn test_redemption_rate_curve_authority_update() {
     let mut context = program_test_context().await;
 
     let authority_keypair = Keypair::new();
@@ -182,7 +182,7 @@ async fn test_aggregated_oracle_curve_authority_update() {
     let invalid_new_rho = clock.unix_timestamp as u128 - 1;
     
     let invalid_rho_data = vec![
-        // discriminator for SwapInstruction::UpdateAggregatedOracleCurvePrice
+        // discriminator for SwapInstruction::SetRates
         vec![6],
         new_ssr.to_le_bytes().to_vec(),
         invalid_new_rho.to_le_bytes().to_vec(),
@@ -222,7 +222,7 @@ async fn test_aggregated_oracle_curve_authority_update() {
     let new_chi: u128 = 2 * RAY;
 
     let update_data = vec![
-        // discriminator for SwapInstruction::UpdateAggregatedOracleCurvePrice
+        // discriminator for SwapInstruction::SetRates
         vec![6],
         new_ssr.to_le_bytes().to_vec(),
         new_rho.to_le_bytes().to_vec(),
