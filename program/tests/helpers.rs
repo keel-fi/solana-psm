@@ -15,8 +15,7 @@ use solana_program_test::{
 };
 use solana_program::pubkey;
 use spl_token_swap::{
-    curve::redemption_rate::RedemptionRateCurve, 
-    state::SwapVersion
+    curve::redemption_rate::RedemptionRateCurve, permission::Permission, state::SwapVersion
 };
 use spl_token::{
     state::{Mint, Account as TokenAccount},
@@ -36,6 +35,21 @@ pub async fn program_test_context() -> ProgramTestContext {
     );
 
     program_test.start_with_context().await
+}
+
+pub fn get_permission_pda(
+    swap_info: &Pubkey,
+    permission_authority: &Pubkey
+) -> Pubkey {
+    let (address, _bump) = Pubkey::find_program_address(
+        &[
+            Permission::PERMISSION_SEED,
+            &swap_info.to_bytes(),
+            &permission_authority.to_bytes()
+        ], 
+        &PROGRAM_ID
+    );
+    address
 }
 
 pub async fn get_init_curve_setup(
@@ -145,12 +159,27 @@ pub async fn fetch_redemption_rate_curve(
 
     let swap_version = SwapVersion::unpack(&account.data).unwrap();
 
-    let mut calculator_dst = vec![0; 112];
+    let mut calculator_dst = vec![0; 80];
     swap_version.swap_curve().calculator.pack_into_slice(&mut calculator_dst);
 
     RedemptionRateCurve::unpack_unchecked(
         &calculator_dst
     ).unwrap()
+}
+
+pub async fn fetch_permission(
+    banks_client: &mut BanksClient,
+    permission: &Pubkey
+) -> Permission {
+    let account = banks_client.get_account(*permission)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let permission = Permission::unpack(&account.data)
+        .unwrap();
+
+    permission
 }
 
 async fn create_token_account(

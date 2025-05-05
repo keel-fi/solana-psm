@@ -3,26 +3,16 @@
 use {
     crate::{
         constraints::{SwapConstraints, SWAP_CONSTRAINTS}, curve::{
-            base::SwapCurve,
+            base::{CurveType, SwapCurve},
             calculator::{RoundDirection, TradeDirection},
             fees::Fees,
         }, error::SwapError, instruction::{
-            DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Initialize, SetRates, Swap, SwapInstruction, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut
-        }, redemption_rate_processor::process_curve_update, state::{SwapState, SwapV1, SwapVersion}
+            DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Initialize, InitializePermission, SetRates, Swap, SwapInstruction, UpdatePermission, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut
+        }, permission::{process_initialize_permission, process_update_permission, Permission}, redemption_rate_processor::process_curve_update, state::{SwapState, SwapV1, SwapVersion}
     },
     num_traits::FromPrimitive,
     solana_program::{
-        account_info::{next_account_info, AccountInfo},
-        clock::Clock,
-        decode_error::DecodeError,
-        entrypoint::ProgramResult,
-        instruction::Instruction,
-        msg,
-        program::invoke_signed,
-        program_error::{PrintProgramError, ProgramError},
-        program_option::COption,
-        pubkey::Pubkey,
-        sysvar::Sysvar,
+        account_info::{next_account_info, AccountInfo}, clock::Clock, decode_error::DecodeError, entrypoint::ProgramResult, instruction::Instruction, msg, program::invoke_signed, program_error::{PrintProgramError, ProgramError}, program_option::COption, program_pack::Pack, pubkey::Pubkey, sysvar::Sysvar
     },
     spl_token_2022::{
         check_spl_token_program_account,
@@ -257,6 +247,8 @@ impl Processor {
         let pool_token_program_info = next_account_info(account_info_iter)?;
 
         let token_program_id = *pool_token_program_info.key;
+
+
         if SwapVersion::is_initialized(&swap_info.data.borrow()) {
             return Err(SwapError::AlreadyInUse.into());
         }
@@ -356,6 +348,35 @@ impl Processor {
             bump_seed,
             to_u64(initial_amount)?,
         )?;
+
+        if swap_curve.curve_type == CurveType::RedemptionRateCurve {
+            // permission account info
+            let permission_info = next_account_info(account_info_iter)?;
+            // super_admin account info
+            let super_admin_info = next_account_info(account_info_iter)?;
+            // payer of create_account invoke_signed
+            let payer_info = next_account_info(account_info_iter)?;
+
+            let system_program_info = next_account_info(account_info_iter)?;
+            
+            let permission = Permission {
+                swap: *swap_info.key,
+                authority: *super_admin_info.key,
+                is_super_admin: true,
+                can_update_parameters: true,
+            };
+            // create permission with invoke_signed
+            Permission::create_permission_account(
+                payer_info.clone(), 
+                permission_info.clone(), 
+                system_program_info.clone(),
+                swap_info.key, 
+                super_admin_info.key
+            )?;
+            // pack permission in permission_info
+            Permission::pack(permission, &mut permission_info.data.borrow_mut())?;
+        }
+
 
         let obj = SwapVersion::SwapV1(SwapV1 {
             is_initialized: true,
@@ -1262,6 +1283,36 @@ impl Processor {
                     ssr, 
                     rho, 
                     chi
+                )
+            }
+            SwapInstruction::InitializePermission(
+                InitializePermission {
+                    permission_authority,
+                    is_super_admin,
+                    can_update_parameters
+                }
+            ) => {
+                msg!("Instruction: InitializePermission");
+                process_initialize_permission(
+                    program_id, accounts, 
+                    permission_authority, 
+                    is_super_admin, 
+                    can_update_parameters
+                )
+
+            }
+            SwapInstruction::UpdatePermission(
+                UpdatePermission {
+                    is_super_admin,
+                    can_update_parameters
+                }
+            ) => {
+                msg!("Instruction: UpdatePermission");
+                process_update_permission(
+                    program_id, 
+                    accounts, 
+                    is_super_admin, 
+                    can_update_parameters
                 )
             }
         }
