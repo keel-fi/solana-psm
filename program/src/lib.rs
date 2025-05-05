@@ -9,6 +9,7 @@ pub mod error;
 pub mod instruction;
 pub mod processor;
 pub mod state;
+pub mod redemption_rate_processor;
 
 #[cfg(not(feature = "no-entrypoint"))]
 mod entrypoint;

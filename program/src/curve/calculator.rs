@@ -92,6 +92,7 @@ pub trait CurveCalculator: Debug + DynPack {
         swap_source_amount: u128,
         swap_destination_amount: u128,
         trade_direction: TradeDirection,
+        timestamp: Option<u128>,
     ) -> Option<SwapWithoutFeesResult>;
 
     /// Get the supply for a new pool
@@ -109,6 +110,7 @@ pub trait CurveCalculator: Debug + DynPack {
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
         round_direction: RoundDirection,
+        timestamp: Option<u128>
     ) -> Option<TradingTokenResult>;
 
     /// Get the amount of pool tokens for the deposited amount of token A or B.
@@ -127,6 +129,7 @@ pub trait CurveCalculator: Debug + DynPack {
         swap_token_b_amount: u128,
         pool_supply: u128,
         trade_direction: TradeDirection,
+        timestamp: Option<u128>,
     ) -> Option<u128>;
 
     /// Get the amount of pool tokens for the withdrawn amount of token A or B.
@@ -147,10 +150,11 @@ pub trait CurveCalculator: Debug + DynPack {
         pool_supply: u128,
         trade_direction: TradeDirection,
         round_direction: RoundDirection,
+        timestamp: Option<u128>,
     ) -> Option<u128>;
 
     /// Validate that the given curve has no invalid parameters
-    fn validate(&self) -> Result<(), SwapError>;
+    fn validate(&self, timestamp: Option<u128>) -> Result<(), SwapError>;
 
     /// Validate the given supply on initialization. This is useful for curves
     /// that allow zero supply on one or both sides, since the standard constant
@@ -188,6 +192,7 @@ pub trait CurveCalculator: Debug + DynPack {
         &self,
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
+        timestamp: Option<u128>,
     ) -> Option<PreciseNumber>;
 }
 
@@ -215,6 +220,7 @@ pub mod test {
         trade_direction: TradeDirection,
         pool_supply: u128,
         epsilon_in_basis_points: u128,
+        timestamp: Option<u128>
     ) {
         let amount_to_swap = source_token_amount / 2;
         let results = curve
@@ -223,6 +229,7 @@ pub mod test {
                 swap_source_amount,
                 swap_destination_amount,
                 trade_direction,
+                timestamp
             )
             .unwrap();
         let opposite_direction = trade_direction.opposite();
@@ -239,6 +246,7 @@ pub mod test {
                 swap_token_b_amount,
                 pool_supply,
                 trade_direction,
+                timestamp
             )
             .unwrap();
 
@@ -260,6 +268,7 @@ pub mod test {
                 swap_token_b_amount,
                 pool_supply,
                 trade_direction,
+                timestamp
             )
             .unwrap();
         let pool_tokens_from_destination = curve
@@ -269,6 +278,7 @@ pub mod test {
                 swap_token_b_amount,
                 pool_supply + pool_tokens_from_source,
                 opposite_direction,
+                timestamp
             )
             .unwrap();
 
@@ -307,6 +317,7 @@ pub mod test {
         swap_token_b_amount: u128,
         trade_direction: TradeDirection,
         epsilon_in_basis_points: u128,
+        timestamp: Option<u128>
     ) {
         // withdraw the pool tokens
         let withdraw_result = curve
@@ -316,6 +327,7 @@ pub mod test {
                 swap_token_a_amount,
                 swap_token_b_amount,
                 RoundDirection::Floor,
+                timestamp
             )
             .unwrap();
 
@@ -331,6 +343,7 @@ pub mod test {
                         new_swap_token_a_amount,
                         new_swap_token_b_amount,
                         trade_direction,
+                        timestamp
                     )
                     .unwrap();
                 withdraw_result.token_b_amount + results.destination_amount_swapped
@@ -342,6 +355,7 @@ pub mod test {
                         new_swap_token_b_amount,
                         new_swap_token_a_amount,
                         trade_direction,
+                        timestamp
                     )
                     .unwrap();
                 withdraw_result.token_a_amount + results.destination_amount_swapped
@@ -359,6 +373,7 @@ pub mod test {
                 pool_token_supply,
                 opposite_direction,
                 RoundDirection::Ceiling,
+                timestamp
             )
             .unwrap();
 
@@ -392,6 +407,7 @@ pub mod test {
         swap_source_amount: u128,
         swap_destination_amount: u128,
         trade_direction: TradeDirection,
+        timestamp: Option<u128>
     ) {
         let results = curve
             .swap_without_fees(
@@ -399,6 +415,7 @@ pub mod test {
                 swap_source_amount,
                 swap_destination_amount,
                 trade_direction,
+                timestamp
             )
             .unwrap();
 
@@ -407,7 +424,7 @@ pub mod test {
             TradeDirection::BtoA => (swap_destination_amount, swap_source_amount),
         };
         let previous_value = curve
-            .normalized_value(swap_token_a_amount, swap_token_b_amount)
+            .normalized_value(swap_token_a_amount, swap_token_b_amount, timestamp)
             .unwrap();
 
         let new_swap_source_amount = swap_source_amount
@@ -422,7 +439,7 @@ pub mod test {
         };
 
         let new_value = curve
-            .normalized_value(swap_token_a_amount, swap_token_b_amount)
+            .normalized_value(swap_token_a_amount, swap_token_b_amount, timestamp)
             .unwrap();
         assert!(new_value.greater_than_or_equal(&previous_value));
 
@@ -455,6 +472,7 @@ pub mod test {
                 swap_token_a_amount,
                 swap_token_b_amount,
                 RoundDirection::Ceiling,
+                None
             )
             .unwrap();
         let new_swap_token_a_amount = swap_token_a_amount + deposit_result.token_a_amount;
@@ -506,6 +524,7 @@ pub mod test {
                 swap_token_a_amount,
                 swap_token_b_amount,
                 RoundDirection::Floor,
+                None
             )
             .unwrap();
         let new_swap_token_a_amount = swap_token_a_amount - withdraw_result.token_a_amount;
@@ -513,13 +532,13 @@ pub mod test {
         let new_pool_token_supply = pool_token_supply - pool_token_amount;
 
         let value = curve
-            .normalized_value(swap_token_a_amount, swap_token_b_amount)
+            .normalized_value(swap_token_a_amount, swap_token_b_amount, None)
             .unwrap();
         // since we can get rounding issues on the pool value which make it seem that
         // the value per token has gone down, we bump it up by an epsilon of 1
         // to cover all cases
         let new_value = curve
-            .normalized_value(new_swap_token_a_amount, new_swap_token_b_amount)
+            .normalized_value(new_swap_token_a_amount, new_swap_token_b_amount, None)
             .unwrap();
 
         // the following inequality must hold:
@@ -536,6 +555,7 @@ pub mod test {
     }
 
     prop_compose! {
+        /// missing docs
         pub fn total_and_intermediate(max_value: u64)(total in 1..max_value)
                         (intermediate in 1..total, total in Just(total))
                         -> (u64, u64) {

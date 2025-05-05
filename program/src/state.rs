@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        curve::{base::SwapCurve, fees::Fees},
+        curve::{base::{CurveType, SwapCurve}, fees::Fees},
         error::SwapError,
     },
     arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs},
@@ -13,6 +13,7 @@ use {
         program_error::ProgramError,
         program_pack::{IsInitialized, Pack, Sealed},
         pubkey::Pubkey,
+        sysvar::{Sysvar, clock::Clock,}
     },
     spl_token_2022::{
         extension::StateWithExtensions,
@@ -52,6 +53,8 @@ pub trait SwapState {
     fn fees(&self) -> &Fees;
     /// Curve associated with swap
     fn swap_curve(&self) -> &SwapCurve;
+    /// Gets current_timestamp option, only needed for RedemptionRateCurve
+    fn get_current_timestamp_opt(&self) -> Result<Option<u128>, ProgramError>;
 }
 
 /// All versions of SwapState
@@ -204,6 +207,13 @@ impl SwapState for SwapV1 {
     fn swap_curve(&self) -> &SwapCurve {
         &self.swap_curve
     }
+
+    fn get_current_timestamp_opt(&self) -> Result<Option<u128>, ProgramError> {
+        Ok(match self.swap_curve.curve_type {
+            CurveType::RedemptionRateCurve => Some(Clock::get()?.unix_timestamp as u128),
+            _ => None
+        })
+    }
 }
 
 impl Sealed for SwapV1 {}
@@ -214,10 +224,10 @@ impl IsInitialized for SwapV1 {
 }
 
 impl Pack for SwapV1 {
-    const LEN: usize = 323;
+    const LEN: usize = 403;
 
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, 323];
+        let output = array_mut_ref![output, 0, 403];
         let (
             is_initialized,
             bump_seed,
@@ -230,7 +240,7 @@ impl Pack for SwapV1 {
             pool_fee_account,
             fees,
             swap_curve,
-        ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 33];
+        ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 113];
         is_initialized[0] = self.is_initialized as u8;
         bump_seed[0] = self.bump_seed;
         token_program_id.copy_from_slice(self.token_program_id.as_ref());
@@ -246,7 +256,7 @@ impl Pack for SwapV1 {
 
     /// Unpacks a byte buffer into a [SwapV1](struct.SwapV1.html).
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![input, 0, 323];
+        let input = array_ref![input, 0, 403];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             is_initialized,
@@ -260,7 +270,7 @@ impl Pack for SwapV1 {
             pool_fee_account,
             fees,
             swap_curve,
-        ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 33];
+        ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 113];
         Ok(Self {
             is_initialized: match is_initialized {
                 [0] => false,
@@ -395,7 +405,7 @@ mod tests {
         packed.extend_from_slice(&TEST_FEES.host_fee_denominator.to_le_bytes());
         packed.push(TEST_CURVE_TYPE);
         packed.extend_from_slice(&TEST_TOKEN_B_OFFSET.to_le_bytes());
-        packed.extend_from_slice(&[0u8; 24]);
+        packed.extend_from_slice(&[0u8; 104]);
         let unpacked = SwapV1::unpack(&packed).unwrap();
         assert_eq!(swap_info, unpacked);
 

@@ -180,6 +180,7 @@ impl CurveCalculator for ConstantProductCurve {
         swap_source_amount: u128,
         swap_destination_amount: u128,
         _trade_direction: TradeDirection,
+        _timestamp: Option<u128>
     ) -> Option<SwapWithoutFeesResult> {
         swap(source_amount, swap_source_amount, swap_destination_amount)
     }
@@ -194,6 +195,7 @@ impl CurveCalculator for ConstantProductCurve {
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
         round_direction: RoundDirection,
+        _timestamp: Option<u128>
     ) -> Option<TradingTokenResult> {
         pool_tokens_to_trading_tokens(
             pool_tokens,
@@ -212,6 +214,7 @@ impl CurveCalculator for ConstantProductCurve {
         swap_token_b_amount: u128,
         pool_supply: u128,
         trade_direction: TradeDirection,
+        _timestamp: Option<u128>,
     ) -> Option<u128> {
         deposit_single_token_type(
             source_amount,
@@ -231,6 +234,7 @@ impl CurveCalculator for ConstantProductCurve {
         pool_supply: u128,
         trade_direction: TradeDirection,
         round_direction: RoundDirection,
+        _timestamp: Option<u128>,
     ) -> Option<u128> {
         withdraw_single_token_type_exact_out(
             source_amount,
@@ -246,11 +250,12 @@ impl CurveCalculator for ConstantProductCurve {
         &self,
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
+        _timestamp: Option<u128>
     ) -> Option<PreciseNumber> {
         normalized_value(swap_token_a_amount, swap_token_b_amount)
     }
 
-    fn validate(&self) -> Result<(), SwapError> {
+    fn validate(&self, _timestamp: Option<u128>) -> Result<(), SwapError> {
         Ok(())
     }
 }
@@ -315,6 +320,7 @@ mod tests {
                 token_a,
                 token_b,
                 RoundDirection::Ceiling,
+                None
             )
             .unwrap();
         assert_eq!(results.token_a_amount, expected_a);
@@ -332,10 +338,10 @@ mod tests {
     fn fail_trading_token_conversion() {
         let calculator = ConstantProductCurve {};
         let results =
-            calculator.pool_tokens_to_trading_tokens(5, 10, u128::MAX, 0, RoundDirection::Floor);
+            calculator.pool_tokens_to_trading_tokens(5, 10, u128::MAX, 0, RoundDirection::Floor, None);
         assert!(results.is_none());
         let results =
-            calculator.pool_tokens_to_trading_tokens(5, 10, 0, u128::MAX, RoundDirection::Floor);
+            calculator.pool_tokens_to_trading_tokens(5, 10, 0, u128::MAX, RoundDirection::Floor, None);
         assert!(results.is_none());
     }
 
@@ -368,6 +374,7 @@ mod tests {
                 swap_source_amount,
                 swap_destination_amount,
                 TradeDirection::AtoB,
+                None
             )
             .unwrap();
         assert_eq!(result.source_amount_swapped, expected_source_amount_swapped);
@@ -386,7 +393,7 @@ mod tests {
 
         // much too small
         assert!(curve
-            .swap_without_fees(10, 70_000_000_000, 4_000_000, TradeDirection::AtoB)
+            .swap_without_fees(10, 70_000_000_000, 4_000_000, TradeDirection::AtoB, None)
             .is_none()); // spot: 10 * 4m / 70b = 0
 
         let tests: &[(u128, u128, u128, u128, u128)] = &[
@@ -449,6 +456,7 @@ mod tests {
                 TradeDirection::AtoB,
                 pool_supply,
                 CONVERSION_BASIS_POINTS_GUARANTEE,
+                None
             );
 
             check_deposit_token_conversion(
@@ -459,6 +467,7 @@ mod tests {
                 TradeDirection::BtoA,
                 pool_supply,
                 CONVERSION_BASIS_POINTS_GUARANTEE,
+                None
             );
         }
     }
@@ -478,7 +487,8 @@ mod tests {
                 swap_token_a_amount as u128,
                 swap_token_b_amount as u128,
                 TradeDirection::AtoB,
-                CONVERSION_BASIS_POINTS_GUARANTEE
+                CONVERSION_BASIS_POINTS_GUARANTEE,
+                None
             );
             check_withdraw_token_conversion(
                 &curve,
@@ -487,7 +497,8 @@ mod tests {
                 swap_token_a_amount as u128,
                 swap_token_b_amount as u128,
                 TradeDirection::BtoA,
-                CONVERSION_BASIS_POINTS_GUARANTEE
+                CONVERSION_BASIS_POINTS_GUARANTEE,
+                None
             );
         }
     }
@@ -505,7 +516,8 @@ mod tests {
                 source_token_amount as u128,
                 swap_source_amount as u128,
                 swap_destination_amount as u128,
-                TradeDirection::AtoB
+                TradeDirection::AtoB,
+                None
             );
         }
     }

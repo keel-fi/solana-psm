@@ -94,6 +94,19 @@ pub struct WithdrawSingleTokenTypeExactAmountOut {
     pub maximum_pool_token_amount: u64,
 }
 
+/// Instruction data for updating rates of RedemptionRateCurve
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
+#[repr(C)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SetRates {
+    /// new ssr
+    pub ssr: u128,
+    /// new rho
+    pub rho: u128,
+    /// new chi
+    pub chi: u128
+}
+
 /// Instructions supported by the token swap program.
 #[repr(C)]
 #[derive(Debug, PartialEq)]
@@ -217,6 +230,13 @@ pub enum SwapInstruction {
     ///   10. `[]` Pool Token program id
     ///   11. `[]` Token (A|B) DESTINATION program id
     WithdrawSingleTokenTypeExactAmountOut(WithdrawSingleTokenTypeExactAmountOut),
+
+    /// Updates rho, chi and ssr in RedemptionRateCurve
+    /// Signer has to be oracle_update_authority
+    /// 
+    /// 0. `[writable]` Token-swap
+    /// 1. `[]` update authority, has to be signer
+    SetRates(SetRates)
 }
 
 impl SwapInstruction {
@@ -279,6 +299,17 @@ impl SwapInstruction {
                     maximum_pool_token_amount,
                 })
             }
+            6 => {
+                let (ssr, rest) = Self::unpack_u128(rest)?;
+                let (rho, rest) = Self::unpack_u128(rest)?;
+                let (chi, _rest) = Self::unpack_u128(rest)?;
+
+                Self::SetRates(SetRates { 
+                    ssr, 
+                    rho, 
+                    chi 
+                })
+            }
             _ => return Err(SwapError::InvalidInstruction.into()),
         })
     }
@@ -290,6 +321,20 @@ impl SwapInstruction {
                 .get(..8)
                 .and_then(|slice| slice.try_into().ok())
                 .map(u64::from_le_bytes)
+                .ok_or(SwapError::InvalidInstruction)?;
+            Ok((amount, rest))
+        } else {
+            Err(SwapError::InvalidInstruction.into())
+        }
+    }
+
+    fn unpack_u128(input: &[u8]) -> Result<(u128, &[u8]), ProgramError> {
+        if input.len() >= 16 {
+            let (amount, rest) = input.split_at(16);
+            let amount = amount
+                .get(..16)
+                .and_then(|slice| slice.try_into().ok())
+                .map(u128::from_le_bytes)
                 .ok_or(SwapError::InvalidInstruction)?;
             Ok((amount, rest))
         } else {
@@ -355,6 +400,14 @@ impl SwapInstruction {
                 buf.push(5);
                 buf.extend_from_slice(&destination_token_amount.to_le_bytes());
                 buf.extend_from_slice(&maximum_pool_token_amount.to_le_bytes());
+            }
+            Self::SetRates(
+                SetRates { ssr, rho, chi }
+            ) => {
+                buf.push(6);
+                buf.extend_from_slice(&ssr.to_le_bytes());
+                buf.extend_from_slice(&rho.to_le_bytes());
+                buf.extend_from_slice(&chi.to_le_bytes());
             }
         }
         buf
@@ -676,7 +729,7 @@ mod tests {
         expect.extend_from_slice(&host_fee_denominator.to_le_bytes());
         expect.push(curve_type as u8);
         expect.extend_from_slice(&token_b_offset.to_le_bytes());
-        expect.extend_from_slice(&[0u8; 24]);
+        expect.extend_from_slice(&[0u8; 104]);
         assert_eq!(packed, expect);
         let unpacked = SwapInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);

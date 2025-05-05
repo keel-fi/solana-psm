@@ -2,18 +2,13 @@
 
 use {
     crate::{
-        constraints::{SwapConstraints, SWAP_CONSTRAINTS},
-        curve::{
+        constraints::{SwapConstraints, SWAP_CONSTRAINTS}, curve::{
             base::SwapCurve,
             calculator::{RoundDirection, TradeDirection},
             fees::Fees,
-        },
-        error::SwapError,
-        instruction::{
-            DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Initialize, Swap,
-            SwapInstruction, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut,
-        },
-        state::{SwapState, SwapV1, SwapVersion},
+        }, error::SwapError, instruction::{
+            DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Initialize, SetRates, Swap, SwapInstruction, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut
+        }, redemption_rate_processor::process_curve_update, state::{SwapState, SwapV1, SwapVersion}
     },
     num_traits::FromPrimitive,
     solana_program::{
@@ -348,7 +343,7 @@ impl Processor {
             swap_constraints.validate_fees(&fees)?;
         }
         fees.validate()?;
-        swap_curve.calculator.validate()?;
+        swap_curve.calculator.validate(Some(Clock::get()?.unix_timestamp as u128))?;
 
         let initial_amount = swap_curve.calculator.new_pool_supply();
 
@@ -481,6 +476,7 @@ impl Processor {
                 u128::from(dest_account.amount),
                 trade_direction,
                 token_swap.fees(),
+                token_swap.get_current_timestamp_opt()?
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
 
@@ -566,6 +562,7 @@ impl Processor {
                     u128::from(pool_mint.supply),
                     trade_direction,
                     RoundDirection::Floor,
+                    token_swap.get_current_timestamp_opt()?
                 )
                 .ok_or(SwapError::FeeCalculationFailure)?;
             // Allow error to fall through
@@ -687,6 +684,7 @@ impl Processor {
                 u128::from(token_a.amount),
                 u128::from(token_b.amount),
                 RoundDirection::Ceiling,
+                token_swap.get_current_timestamp_opt()?
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
         let token_a_amount = to_u64(results.token_a_amount)?;
@@ -812,6 +810,7 @@ impl Processor {
                 u128::from(token_a.amount),
                 u128::from(token_b.amount),
                 RoundDirection::Floor,
+                token_swap.get_current_timestamp_opt()?
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
         let token_a_amount = to_u64(results.token_a_amount)?;
@@ -954,6 +953,7 @@ impl Processor {
                     pool_mint_supply,
                     trade_direction,
                     token_swap.fees(),
+                    token_swap.get_current_timestamp_opt()?
                 )
                 .ok_or(SwapError::ZeroTradingTokens)?
         } else {
@@ -1081,6 +1081,7 @@ impl Processor {
                 pool_mint_supply,
                 trade_direction,
                 token_swap.fees(),
+                token_swap.get_current_timestamp_opt()?
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
 
@@ -1245,6 +1246,22 @@ impl Processor {
                     destination_token_amount,
                     maximum_pool_token_amount,
                     accounts,
+                )
+            }
+            SwapInstruction::SetRates(
+                SetRates {
+                    ssr,
+                    rho,
+                    chi,
+                }
+            ) => {
+                msg!("Instruction: SetRates");
+                process_curve_update(
+                    program_id, 
+                    accounts, 
+                    ssr, 
+                    rho, 
+                    chi
                 )
             }
         }
@@ -2068,6 +2085,13 @@ mod tests {
                     &mut SolanaAccount::default(),
                 ],
             )
+        }
+
+        fn get_current_timestamp_opt(&self) -> Result<Option<u128>, ProgramError> {
+            Ok(match self.swap_curve.curve_type {
+                CurveType::RedemptionRateCurve => Some(Clock::get()?.unix_timestamp as u128),
+                _ => None
+            })
         }
     }
 
@@ -4758,6 +4782,7 @@ mod tests {
                     swap_token_a.base.amount.into(),
                     swap_token_b.base.amount.into(),
                     RoundDirection::Floor,
+                    accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap();
             assert_eq!(
@@ -4838,6 +4863,7 @@ mod tests {
                     swap_token_a.base.amount.into(),
                     swap_token_b.base.amount.into(),
                     RoundDirection::Floor,
+                    accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap();
             let token_a = StateWithExtensions::<Account>::unpack(&token_a_account.data).unwrap();
@@ -6007,6 +6033,7 @@ mod tests {
                     pool_mint.base.supply.into(),
                     TradeDirection::AtoB,
                     &accounts.fees,
+                    accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap();
             let withdraw_fee = accounts.fees.owner_withdraw_fee(pool_token_amount).unwrap();
@@ -6166,6 +6193,7 @@ mod tests {
                 token_b_amount.into(),
                 TradeDirection::AtoB,
                 &fees,
+                accounts.get_current_timestamp_opt().unwrap()
             )
             .unwrap();
 
@@ -6202,6 +6230,7 @@ mod tests {
                     initial_supply.into(),
                     TradeDirection::AtoB,
                     RoundDirection::Floor,
+                    accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap()
         } else {
@@ -6244,6 +6273,7 @@ mod tests {
                 token_a_amount.into(),
                 TradeDirection::BtoA,
                 &fees,
+                accounts.get_current_timestamp_opt().unwrap()
             )
             .unwrap();
         // tweak values based on transfer fees assessed
@@ -6291,6 +6321,7 @@ mod tests {
                     initial_supply.into(),
                     TradeDirection::BtoA,
                     RoundDirection::Floor,
+                    accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap()
         } else {
