@@ -31,7 +31,7 @@ const RAY: u128 = 10u128.pow(27);
 
 
 #[tokio::test]
-async fn test_aggregated_oracle_curve_creation_and_update() {
+async fn test_redemption_rate_curve_creation_and_update() {
     let mut context = program_test_context().await;
     let authority_keypair = Keypair::new();
     let fee_and_destination_owner = Pubkey::new_unique();
@@ -79,7 +79,7 @@ async fn test_aggregated_oracle_curve_creation_and_update() {
 }
 
 #[tokio::test]
-async fn test_aggregated_oracle_curve_permission_system() {
+async fn test_redemption_curve_permission_system() {
     let mut context = program_test_context().await;
     let authority_keypair = Keypair::new();
     let fee_and_destination_owner = Pubkey::new_unique();
