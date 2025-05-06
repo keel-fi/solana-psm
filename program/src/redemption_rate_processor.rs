@@ -32,7 +32,7 @@ pub fn process_curve_update(
 
     let swap_info = next_account_info(accounts_info_iter)?;
     let permission_info = next_account_info(accounts_info_iter)?;
-    let signer = next_account_info(accounts_info_iter)?;
+    let signer_info = next_account_info(accounts_info_iter)?;
 
     if swap_info.owner != program_id {
         return Err(ProgramError::IllegalOwner)
@@ -42,12 +42,8 @@ pub fn process_curve_update(
         return Err(ProgramError::IllegalOwner)
     }
 
-    if !signer.is_signer {
-        return Err(ProgramError::MissingRequiredSignature)
-    }
-
     let permission = Permission::unpack(&permission_info.data.borrow())?;
-    permission.validate_update_authority(swap_info, signer)?;
+    permission.validate_update_params_permission(swap_info, signer_info)?;
 
     let mut swap_data = swap_info.data.borrow_mut();
     let swap = SwapVersion::unpack(&swap_data)?;

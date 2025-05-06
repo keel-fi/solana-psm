@@ -89,25 +89,54 @@ impl Permission {
         (pubkey, bump)
     }
 
-    /// validates that the signer has a valid Permisison account
-    pub fn validate_update_authority(
+    /// validates that the signer and its permission can update params
+    pub fn validate_update_params_permission(
         &self,
         swap_info: &AccountInfo,
-        signer: &AccountInfo
-    ) -> Result<(), SwapError> {
-
-        if &self.swap != swap_info.key {
-            return Err(SwapError::InvalidUpdatePermission)
-        }
-
-        if self.authority != *signer.key {
-            return Err(SwapError::InvalidUpdatePermission)
-        }
+        signer_info: &AccountInfo
+    ) -> Result<(), ProgramError> {
+        self.validate_signer_and_permission(swap_info, signer_info)?;
 
         if !self.can_update_parameters {
-            return Err(SwapError::InvalidUpdatePermission)
+            return Err(SwapError::InvalidUpdatePermission.into())
         }
         
+        Ok(())
+    }
+
+    /// validates that the signer and its permission is super admin
+    pub fn validate_super_admin_permission(
+        &self,
+        swap_info: &AccountInfo,
+        signer_info: &AccountInfo
+    ) -> Result<(), ProgramError> {
+        self.validate_signer_and_permission(swap_info, signer_info)?;
+
+        if !self.is_super_admin {
+            return Err(SwapError::InvalidUpdatePermission.into())
+        }
+
+        Ok(())
+    }
+
+    /// checks that signer and its permission are valid
+    fn validate_signer_and_permission(
+        &self,
+        swap_info: &AccountInfo,
+        signer_info: &AccountInfo
+    ) -> Result<(), ProgramError> {
+        if !signer_info.is_signer {
+            return Err(ProgramError::MissingRequiredSignature)
+        }
+
+        if &self.swap != swap_info.key {
+            return Err(SwapError::InvalidUpdatePermission.into())
+        }
+
+        if self.authority != *signer_info.key {
+            return Err(SwapError::InvalidUpdatePermission.into())
+        }
+
         Ok(())
     }
 
@@ -184,23 +213,8 @@ pub fn process_initialize_permission(
         return Err(ProgramError::IllegalOwner)
     }
 
-    if !signer_info.is_signer {
-        return Err(ProgramError::MissingRequiredSignature)
-    }
-
     let permission = Permission::unpack(&permission_info.data.borrow())?;
-
-    if permission.swap != *swap_info.key {
-        return Err(SwapError::InvalidUpdatePermission.into())
-    }
-
-    if permission.authority != *signer_info.key {
-        return Err(SwapError::InvalidUpdatePermission.into())
-    }
-
-    if !permission.is_super_admin {
-        return Err(SwapError::InvalidUpdatePermission.into())
-    }
+    permission.validate_super_admin_permission(swap_info, signer_info)?;
 
     let new_permission = Permission {
         swap: *swap_info.key,
@@ -248,23 +262,8 @@ pub fn process_update_permission(
         return Err(ProgramError::IllegalOwner)
     }
 
-    if !signer_info.is_signer {
-        return Err(ProgramError::MissingRequiredSignature)
-    }
-
-    let permission = Permission::unpack(&permission_info.data.borrow())?;
-
-    if permission.swap != *swap_info.key {
-        return Err(SwapError::InvalidUpdatePermission.into())
-    }
-
-    if permission.authority != *signer_info.key {
-        return Err(SwapError::InvalidUpdatePermission.into())
-    }
-
-    if !permission.is_super_admin {
-        return Err(SwapError::InvalidUpdatePermission.into())
-    }
+    let permission: Permission = Permission::unpack(&permission_info.data.borrow())?;
+    permission.validate_super_admin_permission(swap_info, signer_info)?;
     
     let mut update_permission_data = update_permission_info.data.borrow_mut();
 
