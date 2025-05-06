@@ -129,7 +129,13 @@ pub enum SwapError {
     InvalidSsr,
     /// Invalid Chi.
     #[error("Invalid Chi")]
-    InvalidChi
+    InvalidChi,
+    /// Invalid Permission address.
+    #[error("Invalid Permission address")]
+    InvalidPermissionAddress,
+    /// Signer does not have valid permission account for curve updates.
+    #[error("Invalid curve update permission")]
+    InvalidUpdatePermission,
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {
@@ -224,6 +230,12 @@ impl PrintProgramError for SwapError {
             },
             SwapError::InvalidChi => {
                 msg!("Error: Invalid Chi")
+            },
+            SwapError::InvalidPermissionAddress => {
+                msg!("Error: Invalid Permission address")
+            },
+            SwapError::InvalidUpdatePermission => {
+                msg!("Error: Invalid update permission")
             }
         }
     }

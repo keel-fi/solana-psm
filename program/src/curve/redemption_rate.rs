@@ -1,7 +1,6 @@
 //! Curve inspired by Spark PSM3
 use arrayref::array_ref;
 use solana_program::{
-    pubkey::Pubkey,
     program_error::ProgramError,
     program_pack::{IsInitialized, Pack, Sealed},
 };
@@ -64,8 +63,6 @@ pub fn trading_tokens_to_pool_tokens(
 /// RedemptionRateCurve struct implementing CurveCalculator
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RedemptionRateCurve {
-    /// Authority allowed to update the SSR parameters.
-    pub update_authority: Pubkey,
     /// Fixed-point scaling factor.
     pub ray: u128,
     /// Maximum allowed SSR value.
@@ -180,7 +177,6 @@ impl RedemptionRateCurve {
 
         let new_calculator = if self.rho == 0 {
             RedemptionRateCurve {
-                update_authority: self.update_authority,
                 ray: self.ray,
                 max_ssr: self.max_ssr,
                 ssr,
@@ -213,7 +209,6 @@ impl RedemptionRateCurve {
             }
     
             RedemptionRateCurve {
-                update_authority: self.update_authority,
                 ray: self.ray,
                 max_ssr: self.max_ssr,
                 ssr,
@@ -443,22 +438,20 @@ impl IsInitialized for RedemptionRateCurve {
 impl Sealed for RedemptionRateCurve {}
 
 impl Pack for RedemptionRateCurve {
-    const LEN: usize = 112;
+    const LEN: usize = 80;
 
     fn pack_into_slice(&self, output: &mut [u8]) {
         (self as &dyn DynPack).pack_into_slice(output);
     }
 
     fn unpack_from_slice(input: &[u8]) -> Result<RedemptionRateCurve, ProgramError> {
-        let update_authority = array_ref![input, 0, 32];
-        let ray = array_ref![input, 32, 16];
-        let max_ssr = array_ref![input, 48, 16];
-        let ssr = array_ref![input, 64, 16];
-        let rho = array_ref![input, 80, 16];
-        let chi = array_ref![input, 96, 16];
+        let ray = array_ref![input, 0, 16];
+        let max_ssr = array_ref![input, 16, 16];
+        let ssr = array_ref![input, 32, 16];
+        let rho = array_ref![input, 48, 16];
+        let chi = array_ref![input, 64, 16];
 
         Ok(Self {
-            update_authority: Pubkey::new_from_array(*update_authority),
             ray: u128::from_le_bytes(*ray),
             max_ssr: u128::from_le_bytes(*max_ssr),
             ssr: u128::from_le_bytes(*ssr),
@@ -470,14 +463,12 @@ impl Pack for RedemptionRateCurve {
 
 impl DynPack for RedemptionRateCurve {
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let (update_authority, rest) = output.split_at_mut(32);
-        let (ray, rest) = rest.split_at_mut(16);
+        let (ray, rest) = output.split_at_mut(16);
         let (max_ssr, rest) = rest.split_at_mut(16);
         let (ssr, rest) = rest.split_at_mut(16);
         let (rho, rest) = rest.split_at_mut(16);
         let (chi, _) = rest.split_at_mut(16);
 
-        update_authority.copy_from_slice(&self.update_authority.to_bytes());
         ray.copy_from_slice(&self.ray.to_le_bytes());
         max_ssr.copy_from_slice(&self.max_ssr.to_le_bytes());
         ssr.copy_from_slice(&self.ssr.to_le_bytes());
@@ -522,7 +513,6 @@ mod tests {
         max_ssr: u128
     ) -> RedemptionRateCurve {
         RedemptionRateCurve {
-            update_authority: Pubkey::default(),
             ray: RAY, 
             max_ssr,
             ssr,
@@ -1030,7 +1020,6 @@ mod tests {
         assert_eq!(curve, unpacked);
 
         let mut packed = vec![];
-        packed.extend_from_slice(&Pubkey::default().to_bytes());
         packed.extend_from_slice(&RAY.to_le_bytes());
         packed.extend_from_slice(&0u128.to_le_bytes());
         packed.extend_from_slice(&ssr.to_le_bytes());
