@@ -17,8 +17,7 @@ use crate::{
         base::{CurveType, SwapCurve}, 
         calculator::CurveCalculator, 
         redemption_rate::RedemptionRateCurve
-    }, 
-    state::{SwapState, SwapV1, SwapVersion}
+    }, permission::Permission, state::{SwapState, SwapV1, SwapVersion}
 };
 
 /// Processes update
@@ -32,22 +31,23 @@ pub fn process_curve_update(
     let accounts_info_iter = &mut accounts.iter();
 
     let swap_info = next_account_info(accounts_info_iter)?;
-    let update_authority_info = next_account_info(accounts_info_iter)?;
+    let permission_info = next_account_info(accounts_info_iter)?;
+    let signer_info = next_account_info(accounts_info_iter)?;
+
+    if swap_info.owner != program_id {
+        return Err(ProgramError::IllegalOwner)
+    }
+
+    if permission_info.owner != program_id {
+        return Err(ProgramError::IllegalOwner)
+    }
+
+    let permission = Permission::unpack(&permission_info.data.borrow())?;
+    permission.validate_update_params_permission(swap_info, signer_info)?;
+
     let mut swap_data = swap_info.data.borrow_mut();
     let swap = SwapVersion::unpack(&swap_data)?;
     let curve = extract_curve(&swap_data)?;
-
-    if swap_info.owner != program_id {
-        return Err(ProgramError::IncorrectProgramId)
-    }
-
-    if !update_authority_info.is_signer {
-        return Err(ProgramError::MissingRequiredSignature)
-    }
-
-    if curve.update_authority != *update_authority_info.key {
-        return Err(ProgramError::MissingRequiredSignature)
-    }
 
     let new_swap_state = create_new_swap_state(
         ssr, 
