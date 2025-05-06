@@ -107,6 +107,30 @@ pub struct SetRates {
     pub chi: u128
 }
 
+/// Instruction data for initializing a new permission account
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
+#[repr(C)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct InitializePermission {
+    /// the pubkey of the new permission authority
+    pub permission_authority: Pubkey,
+    /// is the new permission super admin
+    pub is_super_admin: bool,
+    /// can it update curve parameters
+    pub can_update_parameters: bool
+}
+
+/// Instruction data for updating a permission account
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
+#[repr(C)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct UpdatePermission {
+    /// is super admin
+    pub is_super_admin: bool,
+    /// can it update curve parameters
+    pub can_update_parameters: bool
+}
+
 /// Instructions supported by the token swap program.
 #[repr(C)]
 #[derive(Debug, PartialEq)]
@@ -232,11 +256,32 @@ pub enum SwapInstruction {
     WithdrawSingleTokenTypeExactAmountOut(WithdrawSingleTokenTypeExactAmountOut),
 
     /// Updates rho, chi and ssr in RedemptionRateCurve
-    /// Signer has to be oracle_update_authority
+    /// Permission account has to be provided and signer
+    /// needs to have the corresponding permissions
     /// 
     /// 0. `[writable]` Token-swap
-    /// 1. `[]` update authority, has to be signer
-    SetRates(SetRates)
+    /// 1. `[]` Permission account
+    /// 2. `[]` Signer, linked to permission account
+    SetRates(SetRates),
+
+    /// Initialized a new permission
+    /// 
+    /// 0. `[]` Token-swap
+    /// 1. `[]` Permission account authorized to initialize other permissions
+    /// 2. `[writable]` New permission account to be initialized
+    /// 3. `[signer]` Signer, associated to 1. permission account
+    /// 4. `[writable, signer]` Payer 
+    /// 5. `[]` System program
+    InitializePermission(InitializePermission),
+    
+    /// Updates an existing permission,
+    /// Signer must have a super_admin associated permission account
+    /// 
+    /// 0. `[]` Token-swap
+    /// 1. `[]` Permission account authorized to update another permission
+    /// 2. `[writable]` Permission account being updated
+    /// 3. `[signer]` Signer, associated to 1. permission account
+    UpdatePermission(UpdatePermission)
 }
 
 impl SwapInstruction {
@@ -309,9 +354,52 @@ impl SwapInstruction {
                     rho, 
                     chi 
                 })
+            },
+            7 => {
+                let (permission_authority, rest) = Self::unpack_pubkey(rest)?;
+                let (is_super_admin, rest) = Self::unpack_bool(rest)?;
+                let (can_update_parameters, _rest) = Self::unpack_bool(rest)?;
+
+                Self::InitializePermission(InitializePermission { 
+                    permission_authority, 
+                    is_super_admin, 
+                    can_update_parameters 
+                })
+            },
+            8 => {
+                let (is_super_admin, rest) = Self::unpack_bool(rest)?;
+                let (can_update_parameters, _rest) = Self::unpack_bool(rest)?;
+
+                Self::UpdatePermission(UpdatePermission { 
+                    is_super_admin, 
+                    can_update_parameters 
+                })
             }
             _ => return Err(SwapError::InvalidInstruction.into()),
         })
+    }
+
+    fn unpack_bool(input: &[u8]) -> Result<(bool, &[u8]), ProgramError> {
+        if let Some((&byte, rest)) = input.split_first() {
+            match byte {
+                0 => Ok((false, rest)),
+                1 => Ok((true, rest)),
+                _ => Err(SwapError::InvalidInstruction.into()),
+            }
+        } else {
+            Err(SwapError::InvalidInstruction.into())
+        }
+    }
+
+    fn unpack_pubkey(input: &[u8]) -> Result<(Pubkey, &[u8]), ProgramError> {
+        if input.len() >= 32 {
+            let (pubkey_bytes, rest) = input.split_at(32);
+            let pubkey = Pubkey::new_from_array(pubkey_bytes.try_into().map_err(|_| SwapError::InvalidInstruction)?);
+
+            Ok((pubkey, rest))
+        } else {
+            Err(SwapError::InvalidInstruction.into())
+        }
     }
 
     fn unpack_u64(input: &[u8]) -> Result<(u64, &[u8]), ProgramError> {
@@ -408,6 +496,28 @@ impl SwapInstruction {
                 buf.extend_from_slice(&ssr.to_le_bytes());
                 buf.extend_from_slice(&rho.to_le_bytes());
                 buf.extend_from_slice(&chi.to_le_bytes());
+            }
+            Self::InitializePermission(
+                InitializePermission { 
+                    permission_authority, 
+                    is_super_admin, 
+                    can_update_parameters 
+                }
+            ) => {
+                buf.push(7);
+                buf.extend_from_slice(&permission_authority.to_bytes());
+                buf.push(*is_super_admin as u8);
+                buf.push(*can_update_parameters as u8);
+            },
+            Self::UpdatePermission(
+                UpdatePermission { 
+                    is_super_admin, 
+                    can_update_parameters 
+                }
+            ) => {
+                buf.push(8);
+                buf.push(*is_super_admin as u8);
+                buf.push(*can_update_parameters as u8);
             }
         }
         buf
@@ -729,7 +839,7 @@ mod tests {
         expect.extend_from_slice(&host_fee_denominator.to_le_bytes());
         expect.push(curve_type as u8);
         expect.extend_from_slice(&token_b_offset.to_le_bytes());
-        expect.extend_from_slice(&[0u8; 104]);
+        expect.extend_from_slice(&[0u8; 72]);
         assert_eq!(packed, expect);
         let unpacked = SwapInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
