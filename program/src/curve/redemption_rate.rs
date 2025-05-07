@@ -485,6 +485,21 @@ mod rpow_tests {
     const RAY: u128 = 10u128.pow(27);
     const FIVE_PCT_APY_SSR: u128 = 1_000_000_001_547_125_957_863_212_448;
 
+    fn create_test_curve(
+        ssr: u128,
+        rho: u128,
+        chi: u128,
+        max_ssr: u128
+    ) -> RedemptionRateCurve {
+        RedemptionRateCurve {
+            ray: RAY, 
+            max_ssr,
+            ssr,
+            rho,
+            chi,
+        }
+    }
+
     // tolerance_pct is in percentage (1.0 means 1%)
     fn assert_close_to_float(actual: U256, expected_float: f64, tolerance_pct: f64) {
         // convert expected float to U256 scaled by RAY
@@ -510,13 +525,7 @@ mod rpow_tests {
 
     #[test]
     fn test_rpow_identity_cases() {
-        let curve = RedemptionRateCurve {
-            ray: RAY,
-            max_ssr: 0,
-            ssr: 0,
-            rho: 0,
-            chi: 0,
-        };
+        let curve = create_test_curve(0, 0, 0, 0);
         
         // x^0 = RAY (1.0) for any x > 0
         assert_eq!(curve._rpow(RAY, 0).unwrap(), U256::from(RAY));
@@ -542,14 +551,7 @@ mod rpow_tests {
             // test exponents from 1 to 10
             exponent in 1u32..11u32,
         ) {
-            // Create test curve
-            let curve = RedemptionRateCurve {
-                ray: RAY,
-                max_ssr: 0,
-                ssr: 0,
-                rho: 0,
-                chi: 0,
-            };
+            let curve = create_test_curve(0, 0, 0, 0);
             
             // calculate base value (scaled by RAY)
             let base = RAY * base_multiplier as u128;
@@ -584,13 +586,7 @@ mod rpow_tests {
             // test exponents from 1 to 5
             exponent in 1u32..6u32,
         ) {
-            let curve = RedemptionRateCurve {
-                ray: RAY,
-                max_ssr: 0,
-                ssr: 0,
-                rho: 0,
-                chi: 0,
-            };
+            let curve = create_test_curve(0, 0, 0, 0);
             
             // calculate base (RAY / denominator)
             let base = RAY / denominator as u128;
@@ -619,13 +615,7 @@ mod rpow_tests {
 
     #[test]
     fn test_rpow_specific_fractional_base_cases() {
-        let curve = RedemptionRateCurve {
-            ray: RAY,
-            max_ssr: 0,
-            ssr: 0,
-            rho: 0,
-            chi: 0,
-        };
+        let curve = create_test_curve(0, 0, 0, 0);
                 
         // 0.5^2 = 0.25
         let base = RAY / 2;
@@ -654,13 +644,7 @@ mod rpow_tests {
 
     #[test]
     fn test_rpow_against_floating_point() {
-        let curve = RedemptionRateCurve {
-            ray: RAY,
-            max_ssr: 0,
-            ssr: 0,
-            rho: 0,
-            chi: 0,
-        };
+        let curve = create_test_curve(0, 0, 0, 0);
         
         // 1.5^2 = 2.25
         let base = RAY + (RAY / 2);
@@ -679,13 +663,7 @@ mod rpow_tests {
 
     #[test]
     fn test_rpow_interest_rates() {
-        let curve = RedemptionRateCurve {
-            ray: RAY,
-            max_ssr: 0,
-            ssr: 0,
-            rho: 0,
-            chi: 0,
-        };
+        let curve = create_test_curve(0, 0, 0, 0);
         
         // 1 year = 31,536,000 seconds (365 days)
         let seconds_per_year = 365 * 24 * 60 * 60;
@@ -709,13 +687,7 @@ mod rpow_tests {
 
     #[test]
     fn test_rpow_with_extreme_values() {
-        let curve = RedemptionRateCurve {
-            ray: RAY,
-            max_ssr: 0,
-            ssr: 0,
-            rho: 0,
-            chi: 0,
-        };
+        let curve = create_test_curve(0, 0, 0, 0);
         
         // test with very large base - high interest rate
         // 1000% APY expressed per second
@@ -737,13 +709,7 @@ mod rpow_tests {
 
     #[test]
     fn test_rpow_rounding_behavior() {
-        let curve = RedemptionRateCurve {
-            ray: RAY,
-            max_ssr: 0,
-            ssr: 0,
-            rho: 0,
-            chi: 0,
-        };
+        let curve = create_test_curve(0, 0, 0, 0);
         
         // test with values that would require rounding
         // 1.5^2 should be exactly 2.25 (no rounding needed)
@@ -762,6 +728,7 @@ mod rpow_tests {
         // first calculate base^2
         let square = curve._rpow(base, 2).unwrap();
         // then calculate the expected result with manual final step and rounding
+        // (1.1² × 1.1 + 0.5) ÷ 1 = 1.1³ (so itsn not truncated)
         let expected_cube = (square * U256::from(base) + U256::from(RAY / 2)) / U256::from(RAY);
         
         // calculate with _rpow directly
