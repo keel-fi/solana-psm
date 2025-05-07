@@ -188,46 +188,72 @@ async fn test_rpow_performace_with_duration() {
 }
 
 #[tokio::test]
-async fn test_rpow_performace_with_chi() {
-    let mut context = program_test_context().await;
-    let authority_keypair = Keypair::new();
-    let fee_and_destination_owner = Pubkey::new_unique();
-
-    let (
-        swap_info,
-        authority,
-        _token_a_mint,
-        _token_b_mint,
-        pool_mint,
-        token_a_account,
-        token_b_account,
-        fee_account,
-        destination_account
-    ) = get_init_curve_setup(
-        &mut context.banks_client,
-        &context.payer,
-        context.last_blockhash,
-        &fee_and_destination_owner
-    ).await;
-
-    create_redemption_rate_curve(
-        &mut context,
-        &swap_info,
-        &authority,
-        &authority_keypair,
-        token_a_account,
-        token_b_account,
-        pool_mint,
-        fee_account,
-        destination_account,
-        ONE_HUNDRED_PCT_APY_SSR
-    ).await;
-
-    test_rpow_compute_units_with_growing_chi(
-        &mut context,
-        &swap_info,
-        &authority_keypair
-    ).await
+async fn test_rpow_performance_with_different_max_ssr() {
+    // Define precise APY values
+    const ONE_PCT_APY_SSR: u128 = 1_000_000_000_314_714_530_356_867_391;
+    const FIFTEEN_PCT_APY_SSR: u128 = 1_000_000_004_432_554_513_667_376_032;
+    const TWENTY_PCT_APY_SSR: u128 = 1_000_000_005_860_733_888_492_302_697;
+    const TWENTY_FIVE_PCT_APY_SSR: u128 = 1_000_000_007_264_617_216_271_247_405;
+    
+    // Create a test matrix with different max_ssr values
+    let max_ssr_values = vec![
+        (ONE_PCT_APY_SSR, "1% APY compound"),
+        (FIVE_PCT_APY_SSR, "5% APY compound"),
+        (FIFTEEN_PCT_APY_SSR, "15% APY compound"),
+        (TWENTY_PCT_APY_SSR, "20% APY compound"),
+        (TWENTY_FIVE_PCT_APY_SSR, "25% APY compound"),
+        (ONE_HUNDRED_PCT_APY_SSR, "100% APY compound")
+    ];
+    
+    println!("testing _rpow compute units with different max_ssr values:");
+    
+    for (max_ssr, label) in max_ssr_values {
+        // Create a fresh context for each test
+        let mut context = program_test_context().await;
+        let authority_keypair = Keypair::new();
+        let fee_and_destination_owner = Pubkey::new_unique();
+        
+        // Set up a new curve for this max_ssr value
+        let (
+            swap_info,
+            authority,
+            _token_a_mint,
+            _token_b_mint,
+            pool_mint,
+            token_a_account,
+            token_b_account,
+            fee_account,
+            destination_account
+        ) = get_init_curve_setup(
+            &mut context.banks_client,
+            &context.payer,
+            context.last_blockhash,
+            &fee_and_destination_owner
+        ).await;
+        
+        // Create redemption rate curve with this specific max_ssr
+        create_redemption_rate_curve(
+            &mut context,
+            &swap_info,
+            &authority,
+            &authority_keypair,
+            token_a_account,
+            token_b_account,
+            pool_mint,
+            fee_account,
+            destination_account,
+            max_ssr
+        ).await;
+        
+        println!("\n--- Testing with max_ssr = {} ({}) ---", max_ssr, label);
+        
+        // Test this curve with different durations
+        test_rpow_compute_units_with_growing_duration(
+            &mut context,
+            &swap_info,
+            &authority_keypair
+        ).await;
+    }
 }
 
 
@@ -303,83 +329,6 @@ async fn test_rpow_compute_units_with_growing_duration(
 
         let cu_used = get_transaction_simulation_cu_used(context, tx).await.unwrap();
         println!("Duration: {} seconds, CU used: {}", duration, cu_used);
-    }
-}
-
-async fn test_rpow_compute_units_with_growing_chi(
-    context: &mut ProgramTestContext,
-    swap_info: &Pubkey,
-    authority_keypair: &Keypair
-) {
-    let permission_account = get_permission_pda(
-        swap_info, 
-        &authority_keypair.pubkey()
-    );
-
-    let initial_curve = fetch_redemption_rate_curve(
-        &mut context.banks_client, 
-        swap_info
-    ).await;
-
-    let durations = vec![
-        31536000,       // 1 year
-        315360000,      // 10 years,
-        3153600000,      // 100 years, overflows!
-    ];
-    
-    println!("testing _rpow compute units with different durations and growing CHI");
-
-    // test with different chi growth factors
-    let chi_multipliers = vec![
-        (RAY * 10, "10.0"),                   // 900% growth (10x)
-        (RAY * 50, "50.0"),                   // 4900% growth (50x)
-        (RAY * 100, "100.0"),                 // 9900% growth (100x)
-    ];
-    
-    for (chi_value, label) in chi_multipliers {
-        println!("\nTesting with CHI = {} ({})", chi_value, label);
-        
-        for duration in &durations {
-            let mut clock = Clock::default();
-            clock.unix_timestamp = (initial_curve.rho + duration) as i64;
-            context.set_sysvar(&clock);
-            
-            // For 5% APY
-            let ssr = FIVE_PCT_APY_SSR;
-            let rho = clock.unix_timestamp as u128;
-            let chi = chi_value;
-
-            let update_data = vec![
-                vec![6], // update discriminator
-                ssr.to_le_bytes().to_vec(),
-                rho.to_le_bytes().to_vec(),
-                chi.to_le_bytes().to_vec(),
-            ].concat();
-
-            let accounts = vec![
-                AccountMeta::new(*swap_info, false),
-                AccountMeta::new_readonly(permission_account, false),
-                AccountMeta::new_readonly(authority_keypair.pubkey(), true),
-            ];
-
-            let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(1_400_000);
-
-            let ix = Instruction {
-                program_id: PROGRAM_ID,
-                accounts,
-                data: update_data,
-            };
-
-            let tx = Transaction::new_signed_with_payer(
-                &[compute_budget_ix, ix],
-                Some(&context.payer.pubkey()),
-                &[&context.payer, authority_keypair],
-                context.last_blockhash,
-            );
-
-            let cu_used = get_transaction_simulation_cu_used(context, tx).await.unwrap();
-            println!("Duration: {} seconds, CHI: {}x RAY, CU used: {}", *duration, label, cu_used);
-        }
     }
 }
 

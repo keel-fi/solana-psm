@@ -330,7 +330,6 @@ pub async fn get_transaction_simulation_cu_used(
     let details = simulation_result.simulation_details.unwrap();
 
     let cu_used = details.units_consumed;
-    println!("Units consumed in simulation: {}", cu_used);
 
     Ok(cu_used)
 }
