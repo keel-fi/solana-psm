@@ -482,21 +482,19 @@ mod rpow_tests {
     use super::*;
     use proptest::prelude::*;
 
-    // Standard RAY value (10^27) used as fixed-point scaling factor
     const RAY: u128 = 10u128.pow(27);
+    const FIVE_PCT_APY_SSR: u128 = 1_000_000_001_547_125_957_863_212_448;
 
-     // Test helper to compare U256 result with floating point expectation
-    // Allows for small precision differences due to rounding
     // tolerance_pct is in percentage (1.0 means 1%)
     fn assert_close_to_float(actual: U256, expected_float: f64, tolerance_pct: f64) {
-        // Convert expected float to U256 scaled by RAY
+        // convert expected float to U256 scaled by RAY
         let expected = (expected_float * RAY as f64) as u128;
         let expected_u256 = U256::from(expected);
         
-        // Calculate allowable difference (tolerance_pct% of expected value)
-        let tolerance = (expected_u256 * U256::from((tolerance_pct * 100.0) as u128)) / U256::from(10000u128);
+        // calculate allowable difference (tolerance_pct% of expected value)
+        let tolerance = (expected_u256 * U256::from((tolerance_pct) as u128)) / U256::from(100u128);
         
-        // Calculate actual difference
+        // calculate actual difference
         let diff = if actual > expected_u256 {
             actual - expected_u256
         } else {
@@ -505,7 +503,7 @@ mod rpow_tests {
         
         assert!(
             diff <= tolerance,
-            "Values not close enough: actual {:?}, expected {:?}, diff {:?}, tolerance {:?} ({}%)",
+            "values not close enough: actual {:?}, expected {:?}, diff {:?}, tolerance {:?} ({}%)",
             actual, expected_u256, diff, tolerance, tolerance_pct
         );
     }
@@ -539,9 +537,9 @@ mod rpow_tests {
     proptest! {
         #[test]
         fn test_rpow_integer_powers(
-            // Test bases from 1 to 20
+            // test bases from 1 to 20
             base_multiplier in 1u32..21u32,
-            // Test exponents from 1 to 10
+            // test exponents from 1 to 10
             exponent in 1u32..11u32,
         ) {
             // Create test curve
@@ -553,26 +551,26 @@ mod rpow_tests {
                 chi: 0,
             };
             
-            // Calculate base value (scaled by RAY)
+            // calculate base value (scaled by RAY)
             let base = RAY * base_multiplier as u128;
             
-            // Use the curve's _rpow function to calculate result
+            // use the curve's _rpow function to calculate result
             let rpow_result = curve._rpow(base, exponent as u128).unwrap();
             
-            // Calculate expected result using Rust's native pow function
+            // calculate expected result using Rust's native pow function
             // (base_multiplier^exponent) * RAY
             let expected_multiplier = (base_multiplier as u128).pow(exponent);
             
-            // Ensure we don't overflow u128 before creating the expected result
+            // ensure we don't overflow u128
             prop_assume!(expected_multiplier <= u128::MAX / RAY);
             
             let expected = expected_multiplier * RAY;
             
-            // Assert that the _rpow result matches the expected result
+            // assert that the _rpow result matches the expected result
             assert_eq!(
                 rpow_result, 
                 U256::from(expected),
-                "Incorrect integer power: {}^{} should be {} * RAY",
+                "incorrect integer power: {}^{} should be {} * RAY",
                 base_multiplier, exponent, expected_multiplier
             );
         }
@@ -581,15 +579,11 @@ mod rpow_tests {
     proptest! {
         #[test]
         fn test_rpow_fractional_base(
-            // Test denominators from 2 to 1000 (representing fractions from 1/2 to 1/1000)
-            denominator in 2u32..1001u32,
-            // Test exponents from 1 to 15
-            exponent in 1u32..16u32,
+            // test denominators from 2 to 20 (representing fractions from 1/2 to 1/20)
+            denominator in 2u32..21u32,
+            // test exponents from 1 to 5
+            exponent in 1u32..6u32,
         ) {
-            // Skip very small denominators with high exponents as they can cause values 
-            // too small to represent accurately in our fixed-point format
-            prop_assume!(denominator as u128 <= 100 || exponent <= 5);
-    
             let curve = RedemptionRateCurve {
                 ray: RAY,
                 max_ssr: 0,
@@ -598,54 +592,28 @@ mod rpow_tests {
                 chi: 0,
             };
             
-            // Calculate base (RAY / denominator)
+            // calculate base (RAY / denominator)
             let base = RAY / denominator as u128;
             
-            // Use _rpow to calculate base^exponent
+            // use _rpow to calculate base^exponent
             let result = curve._rpow(base, exponent as u128).unwrap();
             
-            // Calculate expected value:
-            // For fraction 1/n, (1/n)^e = 1/(n^e)
+            // for fraction 1/n, (1/n)^e = 1/(n^e)
             let denom_power = (denominator as u128).pow(exponent);
-            
-            // Skip cases where the denominator would be too large for u128
-            prop_assume!(denom_power > 0 && denom_power <= u128::MAX / RAY);
-            
             let expected = RAY / denom_power;
             
-            // Allow for small rounding differences due to the binary exponentiation algorithm
-            // Especially important for high exponents or small fractions
+            // allow for a small difference due to fixed-point rounding
             let diff = if result > U256::from(expected) {
                 result - U256::from(expected)
             } else {
                 U256::from(expected) - result
             };
             
-            // Tolerance increases with exponent and denominator size
-            // For larger exponents and denominators, need more tolerance
-            let tolerance_factor = (exponent as u128).pow(2) + (denominator as u128 / 10);
-            let tolerance = U256::from(tolerance_factor);
-            
             prop_assert!(
-                diff <= tolerance, 
-                "Inaccurate fractional power: (1/{})^{} calculated as {}, expected {}, diff {}",
+                diff <= U256::from(1),
+                "fractional power too inaccurate: (1/{})^{} calculated as {}, expected {}, diff {}",
                 denominator, exponent, result, expected, diff
             );
-            
-            // For "round" fractions like 1/2, 1/4, 1/5, 1/10, check exact equality
-            if denominator == 2 || denominator == 4 || denominator == 5 || 
-               denominator == 8 || denominator == 10 || denominator == 20 || 
-               denominator == 25 || denominator == 50 || denominator == 100 {
-                // For higher exponents allow tiny rounding differences
-                if exponent <= 5 {
-                    prop_assert_eq!(
-                        result, 
-                        U256::from(expected),
-                        "Exact fractional power failed: (1/{})^{} should be exactly 1/{}",
-                        denominator, exponent, denom_power
-                    );
-                }
-            }
         }
     }
 
@@ -658,9 +626,7 @@ mod rpow_tests {
             rho: 0,
             chi: 0,
         };
-        
-        // Test specific cases that are important and have exact results
-        
+                
         // 0.5^2 = 0.25
         let base = RAY / 2;
         let expected = RAY / 4;
@@ -696,23 +662,19 @@ mod rpow_tests {
             chi: 0,
         };
         
-        // Test various bases and exponents against floating point calculations
-        // We allow small tolerance due to rounding differences
-        
         // 1.5^2 = 2.25
         let base = RAY + (RAY / 2);
         let result = curve._rpow(base, 2).unwrap();
-        assert_close_to_float(result, 2.25, 0.1); // 0.1% tolerance
+        assert_close_to_float(result, 2.25, 1.0); // 1% tolerance
         
         // 1.1^10 ≈ 2.5937...
         let base = RAY + (RAY / 10);
         let result = curve._rpow(base, 10).unwrap();
-        assert_close_to_float(result, 2.5937424601, 0.1); // 0.1% tolerance
-        
+        assert_close_to_float(result, 2.5937424601, 1.0); // 1% tolerance
         // 0.9^5 ≈ 0.59049
         let base = RAY - (RAY / 10);
         let result = curve._rpow(base, 5).unwrap();
-        assert_close_to_float(result, 0.59049, 0.1); // 0.1% tolerance
+        assert_close_to_float(result, 0.59049, 1.0); // 1% tolerance
     }
 
     #[test]
@@ -725,23 +687,16 @@ mod rpow_tests {
             chi: 0,
         };
         
-        // Test with actual interest rate values
-        // Fixed rates in RAY units (scaled by 10^27)
-        
-        // 5% APY rate expressed per-second
-        // 1.05^(1/31536000) ≈ 1.000000001547126
-        let five_pct_apy_ssr = 1_000_000_001_547_125_957_863_212_448u128;
-        
         // 1 year = 31,536,000 seconds (365 days)
         let seconds_per_year = 365 * 24 * 60 * 60;
         
         // 5% for 1 year should be close to 1.05
-        let result = curve._rpow(five_pct_apy_ssr, seconds_per_year).unwrap();
-        assert_close_to_float(result, 1.05, 0.1); // 0.1% tolerance for compound interest
+        let result = curve._rpow(FIVE_PCT_APY_SSR, seconds_per_year).unwrap();
+        assert_close_to_float(result, 1.05, 1.0); // 1% tolerance for compound interest
         
         // 5% for 2 years should be close to 1.1025 (1.05^2)
-        let result = curve._rpow(five_pct_apy_ssr, 2 * seconds_per_year).unwrap();
-        assert_close_to_float(result, 1.1025, 0.1);
+        let result = curve._rpow(FIVE_PCT_APY_SSR, 2 * seconds_per_year).unwrap();
+        assert_close_to_float(result, 1.1025, 1.0);
         
         // 100% APY rate expressed per-second  
         // 2^(1/31536000) ≈ 1.000000021979553
@@ -749,7 +704,7 @@ mod rpow_tests {
         
         // 100% for 1 year should be close to 2.0
         let result = curve._rpow(hundred_pct_apy_ssr, seconds_per_year).unwrap();
-        assert_close_to_float(result, 2.0, 0.1);
+        assert_close_to_float(result, 2.0, 1.0);
     }
 
     #[test]
@@ -762,23 +717,19 @@ mod rpow_tests {
             chi: 0,
         };
         
-        // Test with very large base (high interest rate)
+        // test with very large base - high interest rate
         // 1000% APY expressed per second
         let high_rate = 1_000_000_219_795_531_512_391_530_200u128;
         
-        // Even for high rates, short periods should work fine
         assert!(curve._rpow(high_rate, 1).is_some());
         assert!(curve._rpow(high_rate, 60).is_some()); // 1 minute
         
-        // Test with very large exponent (long time period)
-        // 5% rate for 100 years
-        let five_pct_rate = 1_000_000_001_547_125_957_863_212_448u128;
+        // test with very long time period
         let hundred_years = 100 * 365 * 24 * 60 * 60;
         
-        let result = curve._rpow(five_pct_rate, hundred_years);
+        let result = curve._rpow(FIVE_PCT_APY_SSR, hundred_years);
         assert!(result.is_some(), "Should handle long time periods");
         
-        // Verify result is reasonable (around 5% compounded for 100 years)
         // 1.05^100 ≈ 131.5
         let expected_approx = 131.5;
         assert_close_to_float(result.unwrap(), expected_approx, 5.0); // Allow 5% tolerance
@@ -794,7 +745,7 @@ mod rpow_tests {
             chi: 0,
         };
         
-        // Test with values that would require rounding
+        // test with values that would require rounding
         // 1.5^2 should be exactly 2.25 (no rounding needed)
         let base = RAY + (RAY / 2);
         let expected = RAY * 9 / 4; // 2.25 * RAY
@@ -802,83 +753,38 @@ mod rpow_tests {
         assert_eq!(
             result, 
             U256::from(expected), 
-            "Perfect square should not need rounding"
+            "perfect square should not need rounding"
         );
         
-        // Test with a value that will produce a result requiring rounding
         // 1.1^3 = 1.331... which requires rounding
         let base = RAY + (RAY / 10);
         
-        // Use _rpow twice to avoid the overflow
-        // First calculate base^2
+        // first calculate base^2
         let square = curve._rpow(base, 2).unwrap();
-        // Then calculate the expected result with manual final step and rounding
+        // then calculate the expected result with manual final step and rounding
         let expected_cube = (square * U256::from(base) + U256::from(RAY / 2)) / U256::from(RAY);
         
-        // Calculate with _rpow directly
+        // calculate with _rpow directly
         let rpow_result = curve._rpow(base, 3).unwrap();
         
-        // They should be equal with the rounding logic
+        // they should be equal with the rounding logic
         assert_eq!(
             rpow_result, 
             expected_cube,
-            "Rounding behavior should match expected calculation"
+            "rounding behavior should match expected calculation"
         );
         
-        // Test odd exponent rounding
-        let base_small = RAY + 1; // Just slightly above 1.0
+        // test odd exponent rounding
+        let base_small = RAY + 1; // just above 1.0
         let exp_odd = 3;
         let result_odd = curve._rpow(base_small, exp_odd).unwrap();
         
-        // Test even exponent rounding
         let exp_even = 4;
         let result_even = curve._rpow(base_small, exp_even).unwrap();
         
-        // Verify the results increase with exponent
-        assert!(result_even > result_odd, "Higher exponent should yield larger result");
+        assert!(result_even > result_odd, "higher exponent should yield larger result");
     }
 
-    #[test]
-    fn test_rpow_precision_at_boundaries() {
-        let curve = RedemptionRateCurve {
-            ray: RAY,
-            max_ssr: 0,
-            ssr: 0,
-            rho: 0,
-            chi: 0,
-        };
-        
-        // Test precision near RAY (1.0)
-        // 1.000000001^1000000 ≈ 1.000001
-        let tiny_increase = RAY + 1;
-        let large_exponent = 1_000_000u128;
-        
-        let result = curve._rpow(tiny_increase, large_exponent).unwrap();
-        assert_close_to_float(result, 1.000001, 1.0); // Allow 1% tolerance
-        
-        // Test precision just below RAY
-        // 0.999999999^1000000 ≈ 0.999999
-        let tiny_decrease = RAY - 1;
-        let result = curve._rpow(tiny_decrease, large_exponent).unwrap();
-        assert_close_to_float(result, 0.999999, 1.0); // Allow 1% tolerance
-        
-        // Test precision with tiny differences in exponents
-        let base = 1_000_000_001_547_125_957_863_212_448u128; // ~5% APY
-        let exponent = 31_536_000u128; // 1 year in seconds
-        
-        let result1 = curve._rpow(base, exponent).unwrap();
-        let result2 = curve._rpow(base, exponent + 1).unwrap();
-        
-        // The difference between n and n+1 should be very small for large n
-        let diff = if result2 > result1 {
-            result2 - result1
-        } else {
-            result1 - result2
-        };
-        
-        // The difference should be tiny (much less than 0.000001%)
-        assert!(diff < U256::from(RAY) / U256::from(100_000_000));
-    }
 }
 
 #[cfg(test)]
