@@ -1,5 +1,5 @@
 
-use solana_program_test::BanksClient;
+use solana_program_test::{BanksClient, BanksClientError};
 use solana_sdk::{
     hash::Hash, 
     program_pack::Pack, 
@@ -317,4 +317,19 @@ async fn mint_to_token_account(
     );
 
     banks_client.process_transaction(tx).await.unwrap();
+}
+
+pub async fn get_transaction_simulation_cu_used(
+    context: &mut ProgramTestContext,
+    transaction: Transaction
+) -> Result<u64, BanksClientError> {
+    let simulation_result = context.banks_client
+        .simulate_transaction(transaction)
+        .await?;
+
+    let details = simulation_result.simulation_details.unwrap();
+
+    let cu_used = details.units_consumed;
+
+    Ok(cu_used)
 }
