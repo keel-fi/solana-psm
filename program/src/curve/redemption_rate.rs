@@ -478,6 +478,341 @@ impl DynPack for RedemptionRateCurve {
 }
 
 #[cfg(test)]
+mod rpow_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    const RAY: u128 = 10u128.pow(27);
+    const FIVE_PCT_APY_SSR: u128 = 1_000_000_001_547_125_957_863_212_448;
+    const SECONDS_PER_YEAR: u128 = 365 * 24 * 60 * 60;
+    const SECONDS_PER_FIFTY_YEARS: u128 = 365 * 24 * 60 * 60 * 50;
+    const ONE_HUNDRED_PCT_APY_SSR: u128 = 1_000_000_021_979_553_151_239_153_020;
+
+    fn create_test_curve(
+        ssr: u128,
+        rho: u128,
+        chi: u128,
+        max_ssr: u128
+    ) -> RedemptionRateCurve {
+        RedemptionRateCurve {
+            ray: RAY, 
+            max_ssr,
+            ssr,
+            rho,
+            chi,
+        }
+    }
+
+    #[test]
+    fn test_rpow_overflow_protection() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Test with very large base and exponent -- 100% APY for 10 years
+        let large_base =  ONE_HUNDRED_PCT_APY_SSR;
+        let large_exp = SECONDS_PER_YEAR * 10;
+        
+        // This should not overflow due to U256 usage
+        let result = curve._rpow(large_base, large_exp).unwrap();
+        assert!(result > U256::zero());
+    }
+
+
+    // tolerance_pct is in percentage (1.0 means 1%)
+    fn assert_close_to_float(actual: U256, expected_float: f64, tolerance_pct: f64) {
+        // convert expected float to U256 scaled by RAY
+        let expected = (expected_float * RAY as f64) as u128;
+        let expected_u256 = U256::from(expected);
+        
+        // calculate allowable difference (tolerance_pct% of expected value)
+        // Scale by 1000 to preserve precision for small percentages
+        let tolerance_scaled = (tolerance_pct * 1000.0) as u128;
+        let tolerance = (expected_u256 * U256::from(tolerance_scaled)) / U256::from(100000u128);
+        
+        // calculate actual difference
+        let diff = if actual > expected_u256 {
+            actual - expected_u256
+        } else {
+            expected_u256 - actual
+        };
+        
+        assert!(
+            diff <= tolerance,
+            "values not close enough: actual {:?}, expected {:?}, diff {:?}, tolerance {:?} ({}%)",
+            actual, expected_u256, diff, tolerance, tolerance_pct
+        );
+    }
+
+    #[test]
+    fn test_rpow_identity_cases() {
+        let curve = create_test_curve(0, 0, 0, 0);
+        
+        // x^0 = RAY (1.0) for any x > 0
+        assert_eq!(curve._rpow(RAY, 0).unwrap(), U256::from(RAY));
+        assert_eq!(curve._rpow(2 * RAY, 0).unwrap(), U256::from(RAY));
+        
+        // 0^0 = RAY (1.0) by definition
+        assert_eq!(curve._rpow(0, 0).unwrap(), U256::from(RAY));
+        
+        // 0^n = 0 for n > 0
+        assert_eq!(curve._rpow(0, 1).unwrap(), U256::zero());
+        assert_eq!(curve._rpow(0, 100).unwrap(), U256::zero());
+        
+        // x^1 = x for any x
+        assert_eq!(curve._rpow(RAY, 1).unwrap(), U256::from(RAY));
+        assert_eq!(curve._rpow(2 * RAY, 1).unwrap(), U256::from(2 * RAY));
+    }
+
+    proptest! {
+        #[test]
+        fn test_rpow_integer_powers(
+            // test bases from 1 to 20
+            base_multiplier in 1u32..21u32,
+            // test exponents from 1 to 10
+            exponent in 1u32..11u32,
+        ) {
+            let curve = create_test_curve(0, 0, 0, 0);
+            
+            // calculate base value (scaled by RAY)
+            let base = RAY * base_multiplier as u128;
+            
+            // use the curve's _rpow function to calculate result
+            let rpow_result = curve._rpow(base, exponent as u128).unwrap();
+            
+            // calculate expected result using Rust's native pow function
+            // (base_multiplier^exponent) * RAY
+            let expected_multiplier = (base_multiplier as u128).pow(exponent);
+            
+            // ensure we don't overflow u128
+            prop_assume!(expected_multiplier <= u128::MAX / RAY);
+            
+            let expected = expected_multiplier * RAY;
+            
+            // assert that the _rpow result matches the expected result
+            assert_eq!(
+                rpow_result, 
+                U256::from(expected),
+                "incorrect integer power: {}^{} should be {} * RAY",
+                base_multiplier, exponent, expected_multiplier
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_rpow_fractional_base(
+            // test denominators from 2 to 20 (representing fractions from 1/2 to 1/20)
+            denominator in 2u32..21u32,
+            // test exponents from 1 to 5
+            exponent in 1u32..6u32,
+        ) {
+            let curve = create_test_curve(0, 0, 0, 0);
+            
+            // calculate base (RAY / denominator)
+            let base = RAY / denominator as u128;
+            
+            // use _rpow to calculate base^exponent
+            let result = curve._rpow(base, exponent as u128).unwrap();
+            
+            // for fraction 1/n, (1/n)^e = 1/(n^e)
+            let denom_power = (denominator as u128).pow(exponent);
+            let expected = RAY / denom_power;
+            
+            // allow for a small difference due to fixed-point rounding
+            let diff = if result > U256::from(expected) {
+                result - U256::from(expected)
+            } else {
+                U256::from(expected) - result
+            };
+            
+            prop_assert!(
+                diff <= U256::from(1),
+                "fractional power too inaccurate: (1/{})^{} calculated as {}, expected {}, diff {}",
+                denominator, exponent, result, expected, diff
+            );
+        }
+    }
+
+    #[test]
+    fn test_rpow_specific_fractional_base_cases() {
+        let curve = create_test_curve(0, 0, 0, 0);
+                
+        // 0.5^2 = 0.25
+        let base = RAY / 2;
+        let expected = RAY / 4;
+        assert_eq!(curve._rpow(base, 2).unwrap(), U256::from(expected));
+        
+        // 0.5^3 = 0.125
+        let expected = RAY / 8;
+        assert_eq!(curve._rpow(base, 3).unwrap(), U256::from(expected));
+        
+        // 0.1^2 = 0.01
+        let base = RAY / 10;
+        let expected = RAY / 100;
+        assert_eq!(curve._rpow(base, 2).unwrap(), U256::from(expected));
+        
+        // 0.25^4 = 0.00390625
+        let base = RAY / 4;
+        let expected = RAY / 256;
+        assert_eq!(curve._rpow(base, 4).unwrap(), U256::from(expected));
+        
+        // 0.2^3 = 0.008
+        let base = RAY / 5;
+        let expected = RAY / 125;
+        assert_eq!(curve._rpow(base, 3).unwrap(), U256::from(expected));
+    }
+
+    #[test]
+    fn test_rpow_against_floating_point() {
+        let curve = create_test_curve(0, 0, 0, 0);
+        
+        // 1.5^2 = 2.25
+        let base = RAY + (RAY / 2);
+        let result = curve._rpow(base, 2).unwrap();
+        assert_close_to_float(result, 2.25, 1.0); // 1% tolerance
+        
+        // 1.1^10 ≈ 2.5937...
+        let base = RAY + (RAY / 10);
+        let result = curve._rpow(base, 10).unwrap();
+        assert_close_to_float(result, 2.5937424601, 1.0); // 1% tolerance
+        // 0.9^5 ≈ 0.59049
+        let base = RAY - (RAY / 10);
+        let result = curve._rpow(base, 5).unwrap();
+        assert_close_to_float(result, 0.59049, 1.0); // 1% tolerance
+    }
+
+    #[test]
+    fn test_rpow_interest_rates() {
+        let curve = create_test_curve(0, 0, 0, 0);
+        
+        // 5% for 1 year should be close to 1.05
+        let result = curve._rpow(FIVE_PCT_APY_SSR, SECONDS_PER_YEAR).unwrap();
+        assert_close_to_float(result, 1.05, 0.001);
+        
+        // 5% for 2 years should be close to 1.1025 (1.05^2)
+        let result = curve._rpow(FIVE_PCT_APY_SSR, 2 * SECONDS_PER_YEAR).unwrap();
+        assert_close_to_float(result, 1.1025, 0.001);
+        
+        
+        // 100% for 1 year should be close to 2.0
+        let result = curve._rpow(ONE_HUNDRED_PCT_APY_SSR, SECONDS_PER_YEAR).unwrap();
+        assert_close_to_float(result, 2.0, 0.001);
+
+        // 5% APY for 50 years
+        // Expected unscaled value: (1.05)^50 ≈ 11.467396597107005
+        let result = curve._rpow(FIVE_PCT_APY_SSR, SECONDS_PER_FIFTY_YEARS).unwrap();
+        assert_close_to_float(result, 11.467396597107005, 0.01);
+
+        // 5% APY for 100 years
+        // Expected unscaled value: (1.05)^100 ≈ 131.5012578490916
+        let result = curve._rpow(FIVE_PCT_APY_SSR, SECONDS_PER_FIFTY_YEARS * 2).unwrap();
+        assert_close_to_float(result, 131.5012578490916, 0.1);
+    }
+
+
+    #[test]
+    fn test_rpow_rounding_behavior() {
+        let curve = create_test_curve(0, 0, 0, 0);
+        
+        // test with 1.5^2 = 2.25 (no rounding needed)
+        let base = RAY + (RAY / 2);  // 1.5 * RAY
+        let expected = RAY * 9 / 4;  // 2.25 * RAY
+        let result = curve._rpow(base, 2).unwrap();
+        assert_eq!(
+            result, 
+            U256::from(expected), 
+            "perfect square should not need rounding"
+        );
+        
+        // test with 1.1^3 = 1.331 (with precise hard-coded value)
+        let base = RAY + (RAY / 10);  // 1.1 * RAY
+        // hard-coded expected value: 1.331 * RAY
+        // 1.331 can be represented as 1331/1000
+        let expected_cube = U256::from(RAY) * U256::from(1331) / U256::from(1000);
+        let rpow_result = curve._rpow(base, 3).unwrap();
+        
+        assert_eq!(
+            rpow_result, 
+            expected_cube,
+            "result should match precisely calculated value"
+        );
+        
+        // test odd vs even exponent with small base
+        let base_small = RAY + 1;  // just above 1.0
+        
+        // hard-coded expected values
+        let expected_odd = U256::from(RAY) + U256::from(3);  // 1.000...003
+        let expected_even = U256::from(RAY) + U256::from(4); // 1.000...004
+        
+        let result_odd = curve._rpow(base_small, 3).unwrap();
+        let result_even = curve._rpow(base_small, 4).unwrap();
+        
+        assert_eq!(result_odd, expected_odd, "odd exponent result should match expected");
+        assert_eq!(result_even, expected_even, "even exponent result should match expected");
+        assert!(result_even > result_odd, "higher exponent should yield larger result");
+    }
+
+    #[test]
+    fn test_rpow_small_exponents() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Test with small exponents (2, 3, 4)
+        let base = RAY + 1; // Slightly above RAY
+        let exp2 = curve._rpow(base, 2).unwrap();
+        let exp3 = curve._rpow(base, 3).unwrap();
+        let exp4 = curve._rpow(base, 4).unwrap();
+        
+        // Verify exponential growth
+        assert!(exp3 > exp2);
+        assert!(exp4 > exp3);
+        
+        // Verify the values are reasonable
+        assert!(exp2 < U256::from(base) * U256::from(2));
+        assert!(exp3 < U256::from(base) * U256::from(3));
+        assert!(exp4 < U256::from(base) * U256::from(4));
+    }
+
+    #[test]
+    fn test_rpow_large_exponents() {
+        let curve = create_test_curve(
+            0, 
+            0, 
+            0, 
+            0
+        );
+        
+        // Test with large exponents (1 year, 2 years)
+        let exp1y = curve._rpow(FIVE_PCT_APY_SSR, SECONDS_PER_YEAR).unwrap();
+        let exp2y = curve._rpow(FIVE_PCT_APY_SSR, 2 * SECONDS_PER_YEAR).unwrap();
+        
+        // Verify exponential growth
+        assert!(exp2y > exp1y);
+        
+        // Verify the values are reasonable (5% APY over 1 year)
+        let expected_min = U256::from(RAY) + (U256::from(RAY) / U256::from(20)); // 5% growth
+
+        // Check that exp1y is within 100_000_000_000 of expected_min
+        let diff = if exp1y > expected_min {
+            exp1y - expected_min
+        } else {
+            expected_min - exp1y
+        };
+        assert!(diff <= U256::from(100_000_000_000u128), "Difference too large: {:?}", diff);
+    }
+
+
+}
+
+#[cfg(test)]
 mod tests {
     use {
         super::*,
@@ -504,8 +839,6 @@ mod tests {
     // Timestamp after skipping another year
     const SECOND_TIMESTAMP: u128 = 2 * SECONDS_PER_YEAR;
 
-
-
     fn create_test_curve(
         ssr: u128,
         rho: u128,
@@ -524,7 +857,7 @@ mod tests {
     proptest! {
         #[test]
         fn test_susds_usds_precision_slippage_scaled(
-            multiplier in 1u64..100_000u64, // up to 100,000 sUSDS
+            multiplier in 1u64..100_000_000u64, // up to 100,000,000 sUSDS
         ) {
             let ray = RAY;
             let ssr = RAY;
@@ -571,7 +904,7 @@ mod tests {
     proptest! {
         #[test]
         fn test_usds_susds_precision_slippage_scaled(
-            multiplier in 1u64..100_000u64,
+            multiplier in 1u64..100_000_000u64,
         ) {
             let ray = RAY;
             let ssr = RAY;
@@ -610,7 +943,6 @@ mod tests {
                 .unwrap();
     
             println!("result: {:?}", result);
-            // prop_assert_eq!(result.source_amount_swapped, source_amount);
     
             let actual = result.destination_amount_swapped;
             let diff = if actual > expected_destination {
@@ -650,7 +982,7 @@ mod tests {
             FIVE_PCT_APY_SSR, 
             INITIAL_TIMESTAMP - 1,
             RAY, 
-            INITIAL_TIMESTAMP+1
+            INITIAL_TIMESTAMP + 1
         )
         .is_err());
         
@@ -806,17 +1138,36 @@ mod tests {
         );
                 
         // Set initial values
-        let curve = curve.set_rates(FIVE_PCT_APY_SSR, INITIAL_TIMESTAMP, RAY, INITIAL_TIMESTAMP).unwrap();
+        let curve = curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            INITIAL_TIMESTAMP, 
+            RAY, 
+            INITIAL_TIMESTAMP
+        ).unwrap();
 
         // Calculate max chi growth for 1 year at max SSR
-        let chi_max = curve._rpow(ONE_HUNDRED_PCT_APY_SSR, SECONDS_PER_YEAR).unwrap();
+        let chi_max = curve._rpow(
+            ONE_HUNDRED_PCT_APY_SSR,
+             SECONDS_PER_YEAR
+        ).unwrap();
+
         let chi_max_u128 = chi_max.as_u128();
         
         // Should fail when chi grows too fast
-        assert!(curve.set_rates(FIVE_PCT_APY_SSR, SECOND_TIMESTAMP, chi_max_u128 + 1, SECOND_TIMESTAMP).is_err());
+        assert!(curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            SECOND_TIMESTAMP, 
+            chi_max_u128 + 1, 
+            SECOND_TIMESTAMP
+        ).is_err());
         
         // Should succeed at max allowed chi
-        curve.set_rates(FIVE_PCT_APY_SSR, SECOND_TIMESTAMP, chi_max_u128, SECOND_TIMESTAMP).unwrap();
+        curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            SECOND_TIMESTAMP, 
+            chi_max_u128, 
+            SECOND_TIMESTAMP
+        ).unwrap();
     }
 
     #[test]
@@ -829,145 +1180,12 @@ mod tests {
         );
         
         // Should succeed with large chi growth when no max SSR is set
-        curve.set_rates(FIVE_PCT_APY_SSR, INITIAL_TIMESTAMP, 100_000 * RAY, INITIAL_TIMESTAMP).unwrap();
-    }
-
-    #[test]
-    fn test_rpow_zero_base() {
-        let curve = create_test_curve(
-            0, 
-            0, 
-            0, 
-            0
-        );
-        
-        // 0^0 should return RAY
-        assert_eq!(curve._rpow(0, 0).unwrap(), U256::from(RAY));
-        
-        // 0^n where n > 0 should return 0
-        assert_eq!(curve._rpow(0, 1).unwrap(), U256::zero());
-        assert_eq!(curve._rpow(0, 100).unwrap(), U256::zero());
-    }
-
-    #[test]
-    fn test_rpow_zero_exponent() {
-        let curve = create_test_curve(
-            0, 
-            0, 
-            0, 
-            0
-        );
-        
-        // x^0 should return RAY for any x > 0
-        assert_eq!(curve._rpow(RAY, 0).unwrap(), U256::from(RAY));
-        assert_eq!(curve._rpow(2 * RAY, 0).unwrap(), U256::from(RAY));
-        assert_eq!(curve._rpow(FIVE_PCT_APY_SSR, 0).unwrap(), U256::from(RAY));
-    }
-
-    #[test]
-    fn test_rpow_one_exponent() {
-        let curve = create_test_curve(
-            0, 
-            0, 
-            0, 
-            0
-        );
-        
-        // x^1 should return x
-        assert_eq!(curve._rpow(RAY, 1).unwrap(), U256::from(RAY));
-        assert_eq!(curve._rpow(2 * RAY, 1).unwrap(), U256::from(2 * RAY));
-        assert_eq!(curve._rpow(FIVE_PCT_APY_SSR, 1).unwrap(), U256::from(FIVE_PCT_APY_SSR));
-    }
-
-    #[test]
-    fn test_rpow_small_exponents() {
-        let curve = create_test_curve(
-            0, 
-            0, 
-            0, 
-            0
-        );
-        
-        // Test with small exponents (2, 3, 4)
-        let base = RAY + 1; // Slightly above RAY
-        let exp2 = curve._rpow(base, 2).unwrap();
-        let exp3 = curve._rpow(base, 3).unwrap();
-        let exp4 = curve._rpow(base, 4).unwrap();
-        
-        // Verify exponential growth
-        assert!(exp3 > exp2);
-        assert!(exp4 > exp3);
-        
-        // Verify the values are reasonable
-        assert!(exp2 < U256::from(base) * U256::from(2));
-        assert!(exp3 < U256::from(base) * U256::from(3));
-        assert!(exp4 < U256::from(base) * U256::from(4));
-    }
-
-    #[test]
-    fn test_rpow_large_exponents() {
-        let curve = create_test_curve(
-            0, 
-            0, 
-            0, 
-            0
-        );
-        
-        // Test with large exponents (1 year, 2 years)
-        let exp1y = curve._rpow(FIVE_PCT_APY_SSR, SECONDS_PER_YEAR).unwrap();
-        let exp2y = curve._rpow(FIVE_PCT_APY_SSR, 2 * SECONDS_PER_YEAR).unwrap();
-        
-        // Verify exponential growth
-        assert!(exp2y > exp1y);
-        
-        // Verify the values are reasonable (5% APY over 1 year)
-        let expected_min = U256::from(RAY) + (U256::from(RAY) / U256::from(20)); // 5% growth
-
-        // Check that exp1y is within 100_000_000_000 of expected_min
-        let diff = if exp1y > expected_min {
-            exp1y - expected_min
-        } else {
-            expected_min - exp1y
-        };
-        assert!(diff <= U256::from(100_000_000_000u128), "Difference too large: {:?}", diff);
-    }
-
-    #[test]
-    fn test_rpow_overflow_protection() {
-        let curve = create_test_curve(
-            0, 
-            0, 
-            0, 
-            0
-        );
-        
-        // Test with very large base and exponent -- 100% APY for 10 years
-        let large_base =  ONE_HUNDRED_PCT_APY_SSR;
-        let large_exp = SECONDS_PER_YEAR * 10;
-        
-        // This should not overflow due to U256 usage
-        let result = curve._rpow(large_base, large_exp).unwrap();
-        assert!(result > U256::zero());
-    }
-
-    #[test]
-    fn test_rpow_rounding() {
-        let curve = create_test_curve(
-            0, 
-            0, 
-            0, 
-            0
-        );
-        
-        // Test with values that require rounding
-        let base = RAY + 1;
-        let exp = 2;
-        
-        let result = curve._rpow(base, exp).unwrap();
-        
-        // Verify the result is properly rounded
-        let expected = (U256::from(base) * U256::from(base) + U256::from(RAY) / U256::from(2)) / U256::from(RAY);
-        assert_eq!(result, expected);
+        curve.set_rates(
+            FIVE_PCT_APY_SSR, 
+            INITIAL_TIMESTAMP, 
+            100_000 * RAY, 
+            INITIAL_TIMESTAMP
+        ).unwrap();
     }
 
     #[test]
