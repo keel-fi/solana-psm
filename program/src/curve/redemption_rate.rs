@@ -485,6 +485,7 @@ mod rpow_tests {
     const RAY: u128 = 10u128.pow(27);
     const FIVE_PCT_APY_SSR: u128 = 1_000_000_001_547_125_957_863_212_448;
     const SECONDS_PER_YEAR: u128 = 365 * 24 * 60 * 60;
+    const SECONDS_PER_FIFTY_YEARS: u128 = 365 * 24 * 60 * 60 * 50;
     const ONE_HUNDRED_PCT_APY_SSR: u128 = 1_000_000_021_979_553_151_239_153_020;
 
     fn create_test_curve(
@@ -700,16 +701,26 @@ mod rpow_tests {
         // 100% for 1 year should be close to 2.0
         let result = curve._rpow(ONE_HUNDRED_PCT_APY_SSR, SECONDS_PER_YEAR).unwrap();
         assert_close_to_float(result, 2.0, 0.001);
+
+        // 5% APY for 50 years
+        // Expected unscaled value: (1.05)^50 ≈ 11.467396597107005
+        let result = curve._rpow(FIVE_PCT_APY_SSR, SECONDS_PER_FIFTY_YEARS).unwrap();
+        assert_close_to_float(result, 11.467396597107005, 0.01);
+
+        // 5% APY for 100 years
+        // Expected unscaled value: (1.05)^100 ≈ 131.5012578490916
+        let result = curve._rpow(FIVE_PCT_APY_SSR, SECONDS_PER_FIFTY_YEARS * 2).unwrap();
+        assert_close_to_float(result, 131.5012578490916, 0.1);
     }
+
 
     #[test]
     fn test_rpow_rounding_behavior() {
         let curve = create_test_curve(0, 0, 0, 0);
         
-        // test with values that would require rounding
-        // 1.5^2 should be exactly 2.25 (no rounding needed)
-        let base = RAY + (RAY / 2);
-        let expected = RAY * 9 / 4; // 2.25 * RAY
+        // test with 1.5^2 = 2.25 (no rounding needed)
+        let base = RAY + (RAY / 2);  // 1.5 * RAY
+        let expected = RAY * 9 / 4;  // 2.25 * RAY
         let result = curve._rpow(base, 2).unwrap();
         assert_eq!(
             result, 
@@ -717,33 +728,31 @@ mod rpow_tests {
             "perfect square should not need rounding"
         );
         
-        // 1.1^3 = 1.331... which requires rounding
-        let base = RAY + (RAY / 10);
-        
-        // first calculate base^2
-        let square = curve._rpow(base, 2).unwrap();
-        // then calculate the expected result with manual final step and rounding
-        // (1.1² × 1.1 + 0.5) ÷ 1 = 1.1³ (so it is not truncated)
-        let expected_cube = (square * U256::from(base) + U256::from(RAY / 2)) / U256::from(RAY);
-        
-        // calculate with _rpow directly
+        // test with 1.1^3 = 1.331 (with precise hard-coded value)
+        let base = RAY + (RAY / 10);  // 1.1 * RAY
+        // hard-coded expected value: 1.331 * RAY
+        // 1.331 can be represented as 1331/1000
+        let expected_cube = U256::from(RAY) * U256::from(1331) / U256::from(1000);
         let rpow_result = curve._rpow(base, 3).unwrap();
         
-        // they should be equal with the rounding logic
         assert_eq!(
             rpow_result, 
             expected_cube,
-            "rounding behavior should match expected calculation"
+            "result should match precisely calculated value"
         );
         
-        // test odd exponent rounding
-        let base_small = RAY + 1; // just above 1.0
-        let exp_odd = 3;
-        let result_odd = curve._rpow(base_small, exp_odd).unwrap();
+        // test odd vs even exponent with small base
+        let base_small = RAY + 1;  // just above 1.0
         
-        let exp_even = 4;
-        let result_even = curve._rpow(base_small, exp_even).unwrap();
+        // hard-coded expected values
+        let expected_odd = U256::from(RAY) + U256::from(3);  // 1.000...003
+        let expected_even = U256::from(RAY) + U256::from(4); // 1.000...004
         
+        let result_odd = curve._rpow(base_small, 3).unwrap();
+        let result_even = curve._rpow(base_small, 4).unwrap();
+        
+        assert_eq!(result_odd, expected_odd, "odd exponent result should match expected");
+        assert_eq!(result_even, expected_even, "even exponent result should match expected");
         assert!(result_even > result_odd, "higher exponent should yield larger result");
     }
 
