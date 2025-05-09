@@ -399,6 +399,7 @@ impl Processor {
             fees,
             swap_curve,
         });
+        
         SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())?;
         Ok(())
     }

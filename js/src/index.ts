@@ -67,7 +67,7 @@ export const TokenSwapLayout = struct<RawTokenSwap>([
   u64('hostFeeNumerator'),
   u64('hostFeeDenominator'),
   u8('curveType'),
-  blob(32, 'curveParameters'),
+  blob(80, 'curveParameters'),
 ]);
 
 export interface CreateInstruction {
@@ -95,6 +95,7 @@ export interface DepositAllInstruction {
   poolTokenAmount: bigint;
   maximumTokenA: bigint;
   maximumTokenB: bigint;
+  referralCode: Uint8Array;
 }
 
 export interface WithdrawAllInstruction {
@@ -102,18 +103,21 @@ export interface WithdrawAllInstruction {
   poolTokenAmount: bigint;
   minimumTokenA: bigint;
   minimumTokenB: bigint;
+  referralCode: Uint8Array;
 }
 
 export interface DepositSingleTokenTypeInstruction {
   instruction: number;
   sourceTokenAmount: bigint;
   minimumPoolTokenAmount: bigint;
+  referralCode: Uint8Array;
 }
 
 export interface WithdrawSingleTokenTypeInstruction {
   instruction: number;
   destinationTokenAmount: bigint;
   maximumPoolTokenAmount: bigint;
+  referralCode: Uint8Array;
 }
 
 export const CurveType = Object.freeze({
@@ -204,6 +208,7 @@ export class TokenSwap {
   static async getMinBalanceRentForExemptTokenSwap(
     connection: Connection,
   ): Promise<number> {
+
     return await connection.getMinimumBalanceForRentExemption(
       TokenSwapLayout.span,
     );
@@ -251,14 +256,15 @@ export class TokenSwap {
       u64('hostFeeNumerator'),
       u64('hostFeeDenominator'),
       u8('curveType'),
-      blob(32, 'curveParameters'),
+      blob(80, 'curveParameters'),
     ]);
     let data = Buffer.alloc(1024);
 
     // package curve parameters
     // NOTE: currently assume all curves take a single parameter, u64 int
     //       the remaining 24 of the 32 bytes available are filled with 0s
-    const curveParamsBuffer = Buffer.alloc(32);
+    // NOTE: updated to use 80 bytes for new RedemptionRateCurve
+    const curveParamsBuffer = Buffer.alloc(80);
     Buffer.from(curveParameters).copy(curveParamsBuffer);
 
     {
@@ -408,6 +414,7 @@ export class TokenSwap {
     // Allocate memory for the account
     const balanceNeeded =
       await TokenSwap.getMinBalanceRentForExemptTokenSwap(connection);
+
     const transaction = new Transaction();
     transaction.add(
       SystemProgram.createAccount({
@@ -652,6 +659,8 @@ export class TokenSwap {
       u64('poolTokenAmount'),
       u64('maximumTokenA'),
       u64('maximumTokenB'),
+      // adding 8 bytes for referral code
+      blob(8, "referralCode")
     ]);
 
     const data = Buffer.alloc(dataLayout.span);
@@ -661,6 +670,7 @@ export class TokenSwap {
         poolTokenAmount,
         maximumTokenA,
         maximumTokenB,
+        referralCode: new Uint8Array(8)
       },
       data,
     );
@@ -769,6 +779,7 @@ export class TokenSwap {
       u64('poolTokenAmount'),
       u64('minimumTokenA'),
       u64('minimumTokenB'),
+      blob(8, "referralCode")
     ]);
 
     const data = Buffer.alloc(dataLayout.span);
@@ -778,6 +789,7 @@ export class TokenSwap {
         poolTokenAmount,
         minimumTokenA,
         minimumTokenB,
+        referralCode: new Uint8Array(8)
       },
       data,
     );
@@ -871,6 +883,7 @@ export class TokenSwap {
       u8('instruction'),
       u64('sourceTokenAmount'),
       u64('minimumPoolTokenAmount'),
+      blob(8, "referralCode")
     ]);
 
     const data = Buffer.alloc(dataLayout.span);
@@ -879,6 +892,7 @@ export class TokenSwap {
         instruction: 4, // depositSingleTokenTypeExactAmountIn instruction
         sourceTokenAmount,
         minimumPoolTokenAmount,
+        referralCode: new Uint8Array(8)
       },
       data,
     );
@@ -971,6 +985,7 @@ export class TokenSwap {
       u8('instruction'),
       u64('destinationTokenAmount'),
       u64('maximumPoolTokenAmount'),
+      blob(8, "referralCode")
     ]);
 
     const data = Buffer.alloc(dataLayout.span);
@@ -979,6 +994,7 @@ export class TokenSwap {
         instruction: 5, // withdrawSingleTokenTypeExactAmountOut instruction
         destinationTokenAmount,
         maximumPoolTokenAmount,
+        referralCode: new Uint8Array(8)
       },
       data,
     );
