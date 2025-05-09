@@ -123,7 +123,8 @@ export interface WithdrawSingleTokenTypeInstruction {
 export const CurveType = Object.freeze({
   ConstantProduct: 0, // Constant product curve, Uniswap-style
   ConstantPrice: 1, // Constant price curve, always X amount of A token for 1 B token, where X is defined at init
-  Offset: 2, // Offset curve, like Uniswap, but with an additional offset on the token B side
+  Offset: 2, // Offset curve, like Uniswap, but with an additional offset on the token B side,
+  RedemptionRate: 3 // Redemption rate curve, uses Rho, Chi and Ssr for determining conversion rate
 });
 
 /**
@@ -234,7 +235,19 @@ export class TokenSwap {
     hostFeeDenominator: bigint,
     curveType: number,
     curveParameters: Uint8Array = new Uint8Array(),
+    superAdmin: PublicKey,
+    payer: PublicKey
   ): TransactionInstruction {
+
+    const [permissionAccount] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("permission"),
+        Buffer.from(tokenSwapAccount.publicKey.toBytes()),
+         Buffer.from(superAdmin.toBytes())
+      ],
+      swapProgramId,
+    );
+
     const keys = [
       {pubkey: tokenSwapAccount.publicKey, isSigner: false, isWritable: true},
       {pubkey: authority, isSigner: false, isWritable: false},
@@ -244,6 +257,13 @@ export class TokenSwap {
       {pubkey: feeAccount, isSigner: false, isWritable: false},
       {pubkey: tokenAccountPool, isSigner: false, isWritable: true},
       {pubkey: poolTokenProgramId, isSigner: false, isWritable: false},
+      // authority pda (super admin)
+      {pubkey: permissionAccount, isSigner: false, isWritable: true},
+      // pubkey associated with authority
+      {pubkey: superAdmin, isSigner: false, isWritable: false},
+      {pubkey: payer, isSigner: true, isWritable: true},
+      // system program for creating authority pda
+      {pubkey: SystemProgram.programId, isSigner: false, isWritable: false},
     ];
     const commandDataLayout = struct<CreateInstruction>([
       u8('instruction'),
@@ -446,6 +466,10 @@ export class TokenSwap {
       hostFeeDenominator,
       curveType,
       curveParameters,
+      // added this for extra AccountMeta needed in Redemption curve: super Admin
+      payer.publicKey,
+      // payer
+      payer.publicKey
     );
 
     transaction.add(instruction);
