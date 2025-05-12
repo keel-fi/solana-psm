@@ -1,39 +1,65 @@
 # Nova PSM
 
-A PSM (Peg Stability Module) implementation for Solana, based on the 
-SPL Token Swap program [link](https://github.com/solana-labs/solana-program-library/tree/master/token-swap).
+This repository contains the implementation of a PSM (Peg Stability Module) for the Solana Virtual Machine. The functionality within this program is based largely on Spark's PSM [link](https://github.com/sparkdotfi/spark-psm).
 
-Facilitates the conversion and redemption of Solana bridged sUSDS for USDS (and vice versa) 
-using a redemption rate model that mirrors the approach used by Spark on remote chains [link](https://github.com/sparkdotfi/spark-psm/blob/master/src/PSM3.sol).
+The SPL Token Swap functionality facilitates swapping between any two SPL Tokens, which can be facilitated through a choice of curves. `ConstantProduct`, `ConstantPrice` and `Offset` curves are supported in the original implementation, but are not anticipated to be required initially. 
 
-Extends the SPL Token Swap implementation with a new `RedemptionRate` curve type, alongside the existing `ConstantProduct` and `ConstantPrice` `Offset` curves.
+This implementation extends the range of curves offered to include a new `RedemptionRate` curve type, modeled on the functionality within [link](https://github.com/sparkdotfi/spark-psm/blob/master/src/PSM3.sol) and the corresponding `RateProvider` implementation for EVM, but adapted for the nuissances of Solana and the SVM. As such, the this program also includes equivalent functionality associated with the  `RateProvider` contract in Spark's EVM implementation.
 
-## Building master
+The `RedemptionRate` curve is intended to support the conversion of Solana USDS to Solana sUSDS (Savings USDS) and subsequent redemption, although it could be used to support similar functionality for any pair of tokens that follows a similar approach and can provide similarly described redemption rate configurations.
 
-To build a development version of the Token Swap program, you can use the normal
-build command for Solana programs:
+The choice to build on-top of the SPL Token Swap program was based on an intention to leverage broad ecosystem adoption and composability. The SPL Token Swap Program has been integrated with by many protocols, searchers, algorithmic traders and crucially aggregators. By leveraging this basis and ensuring that key instruction interfaces remain unchanged, this program remains entirely compatible for this audience of possible integrators.
 
-```sh
-cargo build-sbf
-```
+All liquidity provision functionality and core swapping functionality remains unchanged and inherited from the original SPL Token Swap program. The SPL Token Swap program has been audited many times and has been widely used and battetested across Solana DeFi.
 
-## Testing
+## Instruction Overview
 
-### Unit tests
+**`Initialize`** - Initializes a new token swap pool with specified fees and swap curve parameters. This is the first instruction that must be called to set up a new liquidity pool.
 
-Run unit tests from `./program/` using:
+**`Swap`** - Executes a token swap between two tokens in the pool. Users specify the input amount and minimum output amount to prevent excessive slippage. The swap follows the pool's pricing curve and applies configured fees.
 
-```sh
-cargo test
-```
+**`DepositAllTokenTypes`** - Allows users to deposit both token types into the pool in the current ratio. In return, users receive pool tokens representing their share of the liquidity pool. Users can specify maximum amounts for each token to prevent excessive slippage.
 
-#### RedemptionRate Curve Unit Tests
+**`WithdrawAllTokenTypes`** - Enables users to withdraw both token types from the pool by burning their pool tokens. The withdrawal amount is based on the user's share of the pool and the current token ratio. Users can specify minimum amounts for each token to prevent excessive slippage.
+
+**`DepositSingleTokenTypeExactAmountIn`** - Allows users to deposit a single token type into the pool. The input amount is specified exactly, and the output pool tokens are calculated based on the current exchange rate. Users can specify a minimum amount of pool tokens to receive.
+
+**`WithdrawSingleTokenTypeExactAmountOut`** - Enables users to withdraw a specific amount of a single token type from the pool. Users specify the exact output amount desired and the maximum pool tokens they're willing to burn.
+
+**`SetRates`** - Updates the redemption rate curve parameters (ssr, rho, chi) for the pool. This instruction requires appropriate permissions to execute.
+
+**`InitializePermission`** - Creates a new permission account with specified authority and capabilities. This is used to manage who can perform administrative actions on the pool.
+
+**`UpdatePermission`** - Modifies the permissions of an existing permission account. This can update whether an account has super admin privileges or can update curve parameters.
+
+
+## `RedemptionRate` Curve Explanation
+
+The redemption rate model is intended to provide a facility to enable an up-to-date conversion rate to be calculated at the time of request (i.e. at the current block's timesamp), without the need for the rate to be continuously posted. Provided the underlying rate of accrual has not changed, this will replicate (with a very high degree of precision) the rate that would be reflected at the same time on the source protocol implementing the same model.
+
+The functionality implemented here is based on Spark's implementation [link](https://github.dev/sparkdotfi/xchain-ssr-oracle/blob/master/src/SSROracleBase.sol).
+
+The configuration consists of `ssr`, `chi` and `rho` paramteres — which together allow the prevailing redemption rate to be calculated for the current block timestamp, without needing the current redemption rate to be continuously reported. 
+
+NOTE: The complexity of the calculation increases with the time over which the rate must compound (specifically the time between `rho` and now). Testing shows that periods of up to [X] days can be calculated within a `swap` instruction at under 400,000 compute units. When developing infrastructure to provide updates to the configuration, this should be considered in determining a suitable minimum frequency of update.
+
+NOTE: When a rate change occured (i.e. change in `ssr` parameter), calculated rates will be slightly misaligned from those in the original protocol. For typical rates (0-20% APY) the change in rate over short periods of time is minimal, and so the the attack vector is very limited over short periods of time. However, over time this divergence will grow, potentially creating a risk of loss for liquidity providers. When developing infrastructure to provide updates to the configuration, this should be considered in order to minimize the time between rates occuring on the source/original protocol and being reflected within this implementation's configuration.
+ 
+### Updatingto the `RedemptionRate` configuration
+
+For swap pairs configured to use the `RedemptionRate` curve type, the underlying price or swap rate determined is effected by the configuration of within the curve's state. These parameters are intended to be updated over time, to reflect changes in the redemption rate from the core issuing protocol of the yield-bearing token (e.g. Sky's core protocol on Ethereum for sUSDS/USDS creation and redemption).
+
+This rate is updated through a permissioned instruction (`SetRates`). The swap authority remains the super-authority for a particular swap pair, but other update authority can optionally be added using `InitializePermission` and managed using `UpdatePermission`.
+
+NOTE: Naturally the need to update this rate is a mission critical one, and both (a) updates of invalid rate configurations; as well as (b) failure to provide rate updates for extended period; pose risk a risk of loss a liquidity providers. This should be well-understood and suitably addressed when building infrastructure to carry-out this process and in the operations and management of the authority keys associated with this process.
+
+### RedemptionRate Curve Unit Tests
 
 The RedemptionRate curve includes comprehensive unit tests covering:
 
 - **Power function (`_rpow`) tests:**
   - Overflow protection with large bases and exponents
-  - Identity cases (x^0 = 1, 0^0 = 1, 0^n = 0)
+  - Identity cases (`x^0 = 1`, `0^0 = 1`, `0^n = 0`)
   - Integer powers with property-based testing
   - Fractional base computations with accuracy verification
   - Floating-point comparison tests for non-integer results
@@ -42,11 +68,11 @@ The RedemptionRate curve includes comprehensive unit tests covering:
   - Small and large exponent edge cases
 
 - **Rate setting validation tests:**
-  - Rho (timestamp) boundary conditions (future timestamps, decreasing values)
-  - SSR boundary conditions (below RAY, above max_ssr)
-  - Chi growth rate validation (decreasing chi, excessive growth rates)
-  - Max SSR enforcement when configured
-  - No-limit behavior when max_ssr is unset
+  - `rho` (timestamp) boundary conditions (future timestamps, decreasing values)
+  - `ssr` boundary conditions (below RAY, above max_ssr)
+  - `chi` growth rate validation (decreasing chi, excessive growth rates)
+  - `max_ssr` enforcement when configured
+  - No-limit behavior when `max_ssr` is unset
 
 - **Swap precision tests:**
   - sUSDS to USDS conversion accuracy across different amounts
@@ -71,6 +97,10 @@ The RedemptionRate curve includes comprehensive unit tests covering:
 - **Test coverage notes:**
   - Withdraw tests use 100 basis points (1.0%) instead of the standard 20 basis points (0.2%)
   used in `ConstantPrice` to accommodate the compounding calculations inherent in the RedemptionRate model
+
+For more information on tests implemented on other curve types, please see the SPL Token Swap program [link](https://github.com/solana-labs/solana-program-library/tree/master/token-swap) (the original implementation on which this program was based)
+
+
 
 ### Integration tests
 
@@ -104,6 +134,25 @@ npm run test
   - All fees set to 0 (trading fees, owner fees, host fees)
   - Maintains original test scenarios while focusing on core redemption rate functionality
 
+
+## Building master
+
+To build a development version of the Token Swap program, you can use the normal
+build command for Solana programs:
+
+```sh
+cargo build-sbf
+```
+
+## Testing
+
+### Unit tests
+
+Run unit tests from `./program/` using:
+
+```sh
+cargo test
+```
 
 ## Deployment
 
