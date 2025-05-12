@@ -20,7 +20,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 
-import {TokenSwap, CurveType, TOKEN_SWAP_PROGRAM_ID} from '../src';
+import {TokenSwap, CurveType, NOVA_PSM_PROGRAM_ID} from '../src';
 import {newAccountWithLamports} from '../src/util/new-account-with-lamports';
 import {sleep} from '../src/util/sleep';
 
@@ -156,7 +156,7 @@ export async function createTokenSwap(
 
   [authority, bumpSeed] = await PublicKey.findProgramAddress(
     [tokenSwapAccount.publicKey.toBuffer()],
-    TOKEN_SWAP_PROGRAM_ID,
+    NOVA_PSM_PROGRAM_ID,
   );
 
   console.log('creating pool mint');
@@ -262,7 +262,7 @@ export async function createTokenSwap(
     mintB,
     feeAccount,
     tokenAccountPool,
-    TOKEN_SWAP_PROGRAM_ID,
+    NOVA_PSM_PROGRAM_ID,
     TOKEN_PROGRAM_ID,
     TRADING_FEE_NUMERATOR,
     TRADING_FEE_DENOMINATOR,
@@ -280,7 +280,7 @@ export async function createTokenSwap(
   const fetchedTokenSwap = await TokenSwap.loadTokenSwap(
     connection,
     tokenSwapAccount.publicKey,
-    TOKEN_SWAP_PROGRAM_ID,
+    NOVA_PSM_PROGRAM_ID,
     swapPayer,
   );
 

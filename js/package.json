@@ -36,7 +36,7 @@
     "postbuild": "echo '{\"type\":\"commonjs\"}' > lib/cjs/package.json && echo '{\"type\":\"module\"}' > lib/esm/package.json",
     "build:program": "cargo build-sbf --manifest-path=../program/Cargo.toml",
     "test:js": "mocha test",
-    "test": "start-server-and-test 'solana-test-validator --bpf-program SwapsVeCiPHMUAtzQWZw7RjsKjgCjhwU55QGu4U1Szw ../program/target/deploy/spl_token_swap.so --reset --quiet' http://127.0.0.1:8899/health test:js",
+    "test": "start-server-and-test 'solana-test-validator --bpf-program 5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv ../program/target/deploy/nova_psm.so --reset --quiet' http://127.0.0.1:8899/health test:js",
     "lint": "eslint --max-warnings 0 .",
     "lint:fix": "eslint . --fix"
   },

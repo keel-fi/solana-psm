@@ -1,10 +1,9 @@
 [package]
-name = "spl-token-swap-fuzz"
+name = "nova-psm-fuzz"
 version = "0.0.1"
-description = "Solana Program Library Token Swap Fuzzer"
-authors = ["Solana Labs Maintainers <maintainers@solanalabs.com>"]
-repository = "https://github.com/solana-labs/solana-program-library"
-license = "Apache-2.0"
+description = "Nova PSM Token Swap Fuzzer"
+repository = "https://github.com/nova-dot-gg/nova-psm"
+license = "APGL-3"
 edition = "2021"
 publish = false
 
@@ -12,9 +11,9 @@ publish = false
 honggfuzz = { version = "0.5.56" }
 arbitrary = { version = "1.4", features = ["derive"] }
 solana-program = "2.1.0"
-spl-math = { version = "0.3", path = "../../../libraries/math" }
+spl-math = { version = "0.3" }
 spl-token = { version = "7.0", features = [ "no-entrypoint" ] }
-spl-token-swap = { path = "..", features = ["fuzz", "no-entrypoint"] }
+nova-psm = { path = "..", features = ["fuzz", "no-entrypoint"] }
 
 [[bin]]
 name = "token-swap-instructions"

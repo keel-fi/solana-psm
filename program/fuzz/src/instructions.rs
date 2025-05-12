@@ -4,7 +4,7 @@ use {
     honggfuzz::fuzz,
     spl_math::precise_number::PreciseNumber,
     spl_token::error::TokenError,
-    spl_token_swap::{
+    nova_psm::{
         curve::{
             base::{CurveType, SwapCurve},
             calculator::TradeDirection,

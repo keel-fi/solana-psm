@@ -7,7 +7,7 @@ use {
     },
     solana_program::{bpf_loader, entrypoint::ProgramResult, pubkey::Pubkey, system_program},
     spl_token::instruction::approve,
-    spl_token_swap::{
+    nova_psm::{
         curve::{base::SwapCurve, calculator::TradeDirection, fees::Fees},
         instruction::{
             self, DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Swap,
