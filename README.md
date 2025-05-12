@@ -3,7 +3,8 @@
 A PSM (Peg Stability Module) implementation for Solana, based on the 
 SPL Token Swap program [link](https://github.com/solana-labs/solana-program-library/tree/master/token-swap).
 
-Facilitates the conversion and redemption of Solana bridged sUSDS for USDS (and vice versa) using a redemption rate model that mirrors the approach used by Spark on remote chains [link](https://github.com/sparkdotfi/spark-psm/blob/master/src/PSM3.sol).
+Facilitates the conversion and redemption of Solana bridged sUSDS for USDS (and vice versa) 
+using a redemption rate model that mirrors the approach used by Spark on remote chains [link](https://github.com/sparkdotfi/spark-psm/blob/master/src/PSM3.sol).
 
 Extends the SPL Token Swap implementation with a new `RedemptionRate` curve type, alongside the existing `ConstantProduct` and `ConstantPrice` `Offset` curves.
 
@@ -127,26 +128,32 @@ solana program deploy target/deploy/nova_psm.so --keypair ~/production-deployer.
 
 ## Program Addresses
 
-### Reference Implementations
+### SPL Swap
 
 | Network | Program ID | Notes |
 |---------|-----------|-------|
-| **Mainnet Beta** | `TBD` | Production deployment pending |
-| **Devnet** | `TBD` | Testing environment pending |
-| **Testnet** | `TBD` | Unstable, for testing only  pending|
+| **Mainnet** | `5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv` | Production deployment |
+| **Devnet** | `5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv` | Testing environment |
 
 ### SPL Token Swap References
 
 | Program | Network | Address |
 |---------|---------|---------|
-| SPL Token Swap | All | `SwapsVeCiPHMUAtzQWZw7RjsKjgCjhwU55QGu4U1Szw` |
+| SPL Token Swap | Mainnet | `SwapsVeCiPHMUAtzQWZw7RjsKjgCjhwU55QGu4U1Szw` |
 
-### Key Token Addresses
+### Key Token Addresses Solana
 
 | Token | Network | Mint Address |
 |-------|---------|--------------|
-| **USDS** | Mainnet | `TBD` | 
+| **USDS** | Mainnet | `USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA` | 
 | **sUSDS** | Mainnet | `TBD` |
+
+### Key Token Addresses Ethereum
+
+| Token | Network | Mint Address |
+|-------|---------|--------------|
+| **USDS** | Ethereum | `0xdC035D45d973E3EC169d2276DDab16f1e407384F` | 
+| **sUSDS** | Mainnet | `0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD` |
 
 
 ## License

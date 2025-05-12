@@ -16,8 +16,8 @@ import {
 import {u64, publicKey} from '@solana/buffer-layout-utils';
 import {loadAccount} from './util/account.js';
 
-export const TOKEN_SWAP_PROGRAM_ID: PublicKey = new PublicKey(
-  'SwapsVeCiPHMUAtzQWZw7RjsKjgCjhwU55QGu4U1Szw',
+export const NOVA_PSM_PROGRAM_ID: PublicKey = new PublicKey(
+  '5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv',
 );
 
 export const OLD_TOKEN_SWAP_PROGRAM_ID: PublicKey = new PublicKey(

@@ -21,7 +21,7 @@ use solana_sdk::{
     system_program::ID as SYSTEM_PROGRAM_ID, 
     transaction::Transaction
 };
-use spl_token_swap::curve::{
+use nova_psm::curve::{
     redemption_rate::RedemptionRateCurve, 
     fees::Fees
 };
