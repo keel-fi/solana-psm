@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Curve inspired by Spark PSM3
 use arrayref::array_ref;
 use solana_program::{

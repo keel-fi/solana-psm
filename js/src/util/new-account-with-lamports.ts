@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import type {Connection} from '@solana/web3.js';
 import {Keypair} from '@solana/web3.js';
 

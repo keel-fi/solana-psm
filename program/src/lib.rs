@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 #![allow(clippy::arithmetic_side_effects)]
 #![deny(missing_docs)]
 
@@ -19,4 +21,4 @@ mod entrypoint;
 // version
 pub use solana_program;
 
-solana_program::declare_id!("SwapsVeCiPHMUAtzQWZw7RjsKjgCjhwU55QGu4U1Szw");
+solana_program::declare_id!("5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv");

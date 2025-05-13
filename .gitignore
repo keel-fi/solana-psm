@@ -1,2 +1,6 @@
 /program/target/
 /program/proptest-regressions/
+/js/node_modules/
+/program/fuzz/hfuzz_target/
+/program/fuzz/hfuzz_workspace/
+/program/fuzz/target/

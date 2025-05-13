@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 use {
     crate::native_account_data::NativeAccountData,
     solana_program::{program_option::COption, program_pack::Pack, pubkey::Pubkey},

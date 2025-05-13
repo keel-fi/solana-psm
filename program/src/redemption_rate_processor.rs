@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Processor for all RedemptionRateCurve instructions.
 
 use std::sync::Arc;
@@ -102,9 +104,9 @@ fn create_new_swap_state(
 fn extract_curve(
     input: &[u8]
 ) -> Result<RedemptionRateCurve, ProgramError> {
-    let input = array_ref![input, 291, 113];
+    let input = array_ref![input, 291, 81];
 
-    let (curve_type, calculator) = array_refs![input, 1, 112];
+    let (curve_type, calculator) = array_refs![input, 1, 80];
 
     let curve_type = curve_type[0].try_into()?;
 
