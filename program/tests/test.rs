@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Test for testing redemption rate curve authority features. 
 
 use helpers::{

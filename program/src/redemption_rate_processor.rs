@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Processor for all RedemptionRateCurve instructions.
 
 use std::sync::Arc;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Various constraints as required for production environments
 
 #[cfg(feature = "production")]

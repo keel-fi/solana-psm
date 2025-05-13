@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import {Buffer} from 'buffer';
 import {struct, u8, blob} from '@solana/buffer-layout';
 import type {

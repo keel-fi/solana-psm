@@ -1,4 +1,10 @@
-use solana_program::{account_info::AccountInfo, clock::Epoch, pubkey::Pubkey};
+// SPDX-License-Identifier: AGPL-3.0-only
+
+use solana_program::{
+    account_info::AccountInfo, clock::Epoch, pubkey::Pubkey,
+    bpf_loader::ID as BPF_LOADER_PROGRAM_ID,
+    system_program::ID as SYSTEM_PROGRAM_ID
+};
 
 #[derive(Clone)]
 pub struct NativeAccountData {
@@ -41,5 +47,15 @@ impl NativeAccountData {
             false,
             Epoch::default(),
         )
+    }
+
+    pub fn system_program() -> Self {
+        Self {
+            key: SYSTEM_PROGRAM_ID,
+            lamports: 1,
+            data: vec![0; 21],
+            program_id: BPF_LOADER_PROGRAM_ID,
+            is_signer: false,
+        }
     }
 }

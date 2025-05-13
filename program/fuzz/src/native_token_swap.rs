@@ -1,20 +1,16 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Helpers for working with swaps in a fuzzing environment
 
 use {
     crate::{
         native_account_data::NativeAccountData, native_processor::do_process_instruction,
         native_token,
-    },
-    solana_program::{bpf_loader, entrypoint::ProgramResult, pubkey::Pubkey, system_program},
-    spl_token::instruction::approve,
-    nova_psm::{
-        curve::{base::SwapCurve, calculator::TradeDirection, fees::Fees},
-        instruction::{
-            self, DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Swap,
-            WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut,
-        },
-        state::SwapVersion,
-    },
+    }, nova_psm::{
+        curve::{base::{CurveType, SwapCurve}, calculator::TradeDirection, fees::Fees}, instruction::{
+            self, DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, RedemptionRateExtraAccounts, Swap, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut
+        }, permission::Permission, state::SwapVersion, ID as PSM_PROGRAM_ID
+    }, solana_program::{bpf_loader, entrypoint::ProgramResult, program_pack::Pack, pubkey::Pubkey, system_program}, spl_token::instruction::approve
 };
 
 pub struct NativeTokenSwap {
@@ -42,6 +38,21 @@ pub fn create_program_account(program_id: Pubkey) -> NativeAccountData {
     account_data
 }
 
+fn get_permission_pda(
+    swap_info: &Pubkey,
+    permission_authority: &Pubkey
+) -> Pubkey {
+    let (address, _bump) = Pubkey::find_program_address(
+        &[
+            b"permission",
+            &swap_info.to_bytes(),
+            &permission_authority.to_bytes()
+        ], 
+        &PSM_PROGRAM_ID
+    );
+    address
+}
+
 impl NativeTokenSwap {
     pub fn new(
         fees: Fees,
@@ -51,11 +62,12 @@ impl NativeTokenSwap {
     ) -> Self {
         let mut user_account = NativeAccountData::new(0, system_program::id());
         user_account.is_signer = true;
+        
         let mut swap_account =
-            NativeAccountData::new(SwapVersion::LATEST_LEN, spl_token_swap::id());
+            NativeAccountData::new(SwapVersion::LATEST_LEN, nova_psm::id());
         let (authority_key, bump_seed) = Pubkey::find_program_address(
             &[&swap_account.key.to_bytes()[..]],
-            &spl_token_swap::id(),
+            &nova_psm::id(),
         );
         let mut authority_account = create_program_account(authority_key);
         let mut pool_token_program_account = create_program_account(spl_token::id());
@@ -80,8 +92,33 @@ impl NativeTokenSwap {
             token_b_amount,
         );
 
+        let permission_account_key = get_permission_pda(
+            &swap_account.key, 
+            &user_account.key
+        );
+        let mut permission_account = NativeAccountData {
+            key: permission_account_key,
+            lamports: 0,
+            data: vec![0; Permission::LEN],
+            program_id: system_program::ID,
+            is_signer: false
+        };
+
+        let mut system_program = NativeAccountData::system_program();
+
+        // accounts used in RedemptionRate curve initialization
+        let redemption_extra_accounts = match swap_curve.curve_type {
+            CurveType::RedemptionRateCurve => Some(RedemptionRateExtraAccounts {
+                permission_account: &permission_account.key,
+                authority: &user_account.key,
+                payer: &user_account.key,
+                system_program: &system_program::ID
+            }),
+            _ => None
+        };
+
         let init_instruction = instruction::initialize(
-            &spl_token_swap::id(),
+            &nova_psm::id(),
             &spl_token::id(),
             &swap_account.key,
             &authority_account.key,
@@ -92,21 +129,34 @@ impl NativeTokenSwap {
             &pool_token_account.key,
             fees.clone(),
             swap_curve.clone(),
+            redemption_extra_accounts
         )
         .unwrap();
 
+        let mut authority_clone = user_account.clone();
+        let mut payer = user_account.clone();
+
+        let mut accounts = vec![
+            swap_account.as_account_info(),
+            authority_account.as_account_info(),
+            token_a_account.as_account_info(),
+            token_b_account.as_account_info(),
+            pool_mint_account.as_account_info(),
+            pool_fee_account.as_account_info(),
+            pool_token_account.as_account_info(),
+            pool_token_program_account.as_account_info(),
+        ];
+
+        if swap_curve.curve_type == CurveType::RedemptionRateCurve {
+            accounts.push(permission_account.as_account_info());
+            accounts.push(authority_clone.as_account_info());
+            accounts.push(payer.as_account_info());
+            accounts.push(system_program.as_account_info());
+        }
+
         do_process_instruction(
             init_instruction,
-            &[
-                swap_account.as_account_info(),
-                authority_account.as_account_info(),
-                token_a_account.as_account_info(),
-                token_b_account.as_account_info(),
-                pool_mint_account.as_account_info(),
-                pool_fee_account.as_account_info(),
-                pool_token_account.as_account_info(),
-                pool_token_program_account.as_account_info(),
-            ],
+            &accounts,
         )
         .unwrap();
 
@@ -176,7 +226,7 @@ impl NativeTokenSwap {
         )
         .unwrap();
         let swap_instruction = instruction::swap(
-            &spl_token_swap::id(),
+            &nova_psm::id(),
             &spl_token::id(),
             &spl_token::id(),
             &spl_token::id(),
@@ -245,7 +295,7 @@ impl NativeTokenSwap {
         .unwrap();
 
         let swap_instruction = instruction::swap(
-            &spl_token_swap::id(),
+            &nova_psm::id(),
             &spl_token::id(),
             &spl_token::id(),
             &spl_token::id(),
@@ -339,7 +389,7 @@ impl NativeTokenSwap {
         }
 
         let deposit_instruction = instruction::deposit_all_token_types(
-            &spl_token_swap::id(),
+            &nova_psm::id(),
             &spl_token::id(),
             &spl_token::id(),
             &spl_token::id(),
@@ -413,7 +463,7 @@ impl NativeTokenSwap {
         .unwrap();
 
         let withdraw_instruction = instruction::withdraw_all_token_types(
-            &spl_token_swap::id(),
+            &nova_psm::id(),
             &spl_token::id(),
             &spl_token::id(),
             &spl_token::id(),
@@ -498,7 +548,7 @@ impl NativeTokenSwap {
         };
 
         let deposit_instruction = instruction::deposit_single_token_type_exact_amount_in(
-            &spl_token_swap::id(),
+            &nova_psm::id(),
             &spl_token::id(),
             &spl_token::id(),
             &self.swap_account.key,
@@ -574,7 +624,7 @@ impl NativeTokenSwap {
             TradeDirection::BtoA => &mut self.token_b_mint_account,
         };
         let withdraw_instruction = instruction::withdraw_single_token_type_exact_amount_out(
-            &spl_token_swap::id(),
+            &nova_psm::id(),
             &spl_token::id(),
             &spl_token::id(),
             &self.swap_account.key,

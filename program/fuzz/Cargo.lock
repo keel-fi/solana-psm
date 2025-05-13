@@ -732,6 +732,7 @@ name = "nova-psm-fuzz"
 version = "0.0.1"
 dependencies = [
  "arbitrary",
+ "bincode",
  "honggfuzz",
  "nova-psm",
  "solana-program",
