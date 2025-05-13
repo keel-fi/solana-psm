@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 #![allow(clippy::arithmetic_side_effects)]
 #![deny(missing_docs)]
 

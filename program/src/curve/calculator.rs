@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Swap calculations
 
 #[cfg(feature = "fuzz")]

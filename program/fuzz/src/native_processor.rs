@@ -1,12 +1,32 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 use {
     crate::native_account_data::NativeAccountData,
     solana_program::{
-        account_info::AccountInfo, entrypoint::ProgramResult, instruction::Instruction,
-        program_error::ProgramError, program_stubs, pubkey::Pubkey,
+        account_info::AccountInfo, 
+        clock::{Clock, Epoch, Slot, UnixTimestamp}, 
+        entrypoint::ProgramResult, instruction::Instruction, 
+        program_error::ProgramError, 
+        program_stubs, pubkey::Pubkey, rent::Rent,
+        system_program
     },
+    std::sync::{Arc, Mutex}
 };
 
-struct TestSyscallStubs {}
+struct TestSyscallStubs {
+    clock: Arc<Mutex<Clock>>,
+    rent: Arc<Mutex<Rent>>
+}
+
+impl TestSyscallStubs {
+    pub fn new(clock: Clock, rent: Rent) -> Self {
+        TestSyscallStubs {
+            clock: Arc::new(Mutex::new(clock)),
+            rent: Arc::new(Mutex::new(rent))
+        }
+    }
+}
+
 impl program_stubs::SyscallStubs for TestSyscallStubs {
     fn sol_invoke_signed(
         &self,
@@ -17,7 +37,9 @@ impl program_stubs::SyscallStubs for TestSyscallStubs {
         let mut new_account_infos = vec![];
 
         // mimic check for token program in accounts
-        if !account_infos.iter().any(|x| *x.key == spl_token::id()) {
+        if instruction.program_id == spl_token::id()
+            && !account_infos.iter().any(|x| *x.key == spl_token::id())
+        {
             return Err(ProgramError::InvalidAccountData);
         }
 
@@ -27,7 +49,7 @@ impl program_stubs::SyscallStubs for TestSyscallStubs {
                     let mut new_account_info = account_info.clone();
                     for seeds in signers_seeds.iter() {
                         let signer =
-                            Pubkey::create_program_address(seeds, &spl_token_swap::id()).unwrap();
+                            Pubkey::create_program_address(seeds, &nova_psm::id()).unwrap();
                         if *account_info.key == signer {
                             new_account_info.is_signer = true;
                         }
@@ -37,11 +59,50 @@ impl program_stubs::SyscallStubs for TestSyscallStubs {
             }
         }
 
-        spl_token::processor::Processor::process(
-            &instruction.program_id,
-            &new_account_infos,
-            &instruction.data,
-        )
+        if instruction.program_id == spl_token::id() {
+            spl_token::processor::Processor::process(
+                &instruction.program_id,
+                &new_account_infos,
+                &instruction.data,
+            )
+        } else if instruction.program_id == system_program::id() {
+            // Handle System Program instructions
+            Ok(())
+        } else {
+            Err(ProgramError::IncorrectProgramId)
+        }
+    }
+
+    fn sol_get_clock_sysvar(&self, var_addr: *mut u8) -> u64 {
+        let clock = self.clock.clone();
+
+        let serialized = bincode::serialize(&*clock).expect("Failed to serialize Clock");
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                serialized.as_ptr(),
+                var_addr,
+                serialized.len(),
+            );
+        }
+
+        0
+    }
+
+    fn sol_get_rent_sysvar(&self, var_addr: *mut u8) -> u64 {
+        let rent = self.rent.clone();
+
+        let serialized = bincode::serialize(&*rent).expect("Failed to serialize Rent");
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                serialized.as_ptr(),
+                var_addr,
+                serialized.len(),
+            );
+        }
+
+        0
     }
 }
 
@@ -50,7 +111,22 @@ fn test_syscall_stubs() {
     static ONCE: Once = Once::new();
 
     ONCE.call_once(|| {
-        program_stubs::set_syscall_stubs(Box::new(TestSyscallStubs {}));
+
+        let mock_clock = Clock {
+            slot: 1000 as Slot,
+            epoch_start_timestamp: 1625097600 as UnixTimestamp,
+            epoch: 10 as Epoch,
+            leader_schedule_epoch: 11 as Epoch,
+            unix_timestamp: 1625097600 as UnixTimestamp,
+        };
+
+        let mock_rent = Rent {
+            lamports_per_byte_year: 100,
+            exemption_threshold: 1.0,
+            burn_percent: 1
+        };
+
+        program_stubs::set_syscall_stubs(Box::new(TestSyscallStubs::new(mock_clock, mock_rent)));
     });
 }
 
@@ -67,8 +143,8 @@ pub fn do_process_instruction(instruction: Instruction, accounts: &[AccountInfo]
         .iter_mut()
         .map(NativeAccountData::as_account_info)
         .collect::<Vec<_>>();
-    let res = if instruction.program_id == spl_token_swap::id() {
-        spl_token_swap::processor::Processor::process(
+    let res = if instruction.program_id == nova_psm::id() {
+        nova_psm::processor::Processor::process(
             &instruction.program_id,
             &account_infos,
             &instruction.data,

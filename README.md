@@ -41,7 +41,7 @@ The functionality implemented here is based on Spark's implementation [link](htt
 
 The configuration consists of `ssr`, `chi` and `rho` paramteres — which together allow the prevailing redemption rate to be calculated for the current block timestamp, without needing the current redemption rate to be continuously reported. 
 
-NOTE: The complexity of the calculation increases with the time over which the rate must compound (specifically the time between `rho` and now). Testing shows that periods of up to [X] days can be calculated within a `swap` instruction at under 400,000 compute units. When developing infrastructure to provide updates to the configuration, this should be considered in determining a suitable minimum frequency of update.
+NOTE: The complexity of the calculation increases with the time over which the rate must compound (specifically the time between `rho` and now). Testing shows that periods of up to 3650 days can be calculated within a `swap` instruction at under 400,000 compute units. When developing infrastructure to provide updates to the configuration, this should be considered in determining a suitable minimum frequency of update.
 
 NOTE: When a rate change occured (i.e. change in `ssr` parameter), calculated rates will be slightly misaligned from those in the original protocol. For typical rates (0-20% APY) the change in rate over short periods of time is minimal, and so the the attack vector is very limited over short periods of time. However, over time this divergence will grow, potentially creating a risk of loss for liquidity providers. When developing infrastructure to provide updates to the configuration, this should be considered in order to minimize the time between rates occuring on the source/original protocol and being reflected within this implementation's configuration.
  
@@ -151,7 +151,7 @@ cargo build-sbf
 Run unit tests from `./program/` using:
 
 ```sh
-cargo test
+cargo test-sbf
 ```
 
 ## Deployment
