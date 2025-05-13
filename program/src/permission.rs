@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Permission system for managing updates.
 
 use solana_program::{
@@ -9,7 +11,7 @@ use solana_program::{
     account_info::AccountInfo,
     program::invoke_signed,
     system_program::ID as SYSTEM_PROGRAM_ID,
-    account_info::next_account_info
+    account_info::next_account_info,
 };
 use arrayref::array_ref;
 
@@ -148,6 +150,7 @@ impl Permission {
         swap: &Pubkey,
         permission_authority: &Pubkey
     ) -> Result<(), ProgramError> {
+
         let (
             permission_address,
             permission_bump
@@ -184,7 +187,9 @@ impl Permission {
                 permission_authority.as_ref(),
                 &[permission_bump]
             ]]
-        )
+        )?;
+
+        Ok(())
     }
 }
 

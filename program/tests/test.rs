@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Test for testing redemption rate curve authority features. 
 
 use helpers::{
@@ -21,7 +23,7 @@ use solana_sdk::{
     system_program::ID as SYSTEM_PROGRAM_ID, 
     transaction::Transaction
 };
-use spl_token_swap::curve::{
+use nova_psm::curve::{
     redemption_rate::RedemptionRateCurve, 
     fees::Fees
 };

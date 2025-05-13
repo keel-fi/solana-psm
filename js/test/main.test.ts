@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import {
   Keypair,
   Connection,
@@ -20,21 +22,31 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 
-import {TokenSwap, CurveType, TOKEN_SWAP_PROGRAM_ID} from '../src';
+import {TokenSwap, CurveType, NOVA_PSM_PROGRAM_ID} from '../src';
 import {newAccountWithLamports} from '../src/util/new-account-with-lamports';
 import {sleep} from '../src/util/sleep';
+
+const RAY = 1000000000000000000000000000n;
+
+function bigIntToLittleEndianBytes(value: bigint, length: number): Uint8Array {
+  const result = new Uint8Array(length);
+  for (let i = 0; i < length; i++) {
+    result[i] = Number((value >> BigInt(8 * i)) & 0xFFn);
+  }
+  return result;
+}
 
 describe('spl-token-swap instructions', () => {
   it('executes properly', async () => {
     // These test cases are designed to run sequentially and in the following order
-    console.log('Run test: createTokenSwap (constant price)');
-    const constantPrice = new Uint8Array(8);
-    constantPrice[0] = 1;
-    await createTokenSwap(CurveType.ConstantPrice, constantPrice);
+    console.log('Run test: createTokenSwap (redemption rate curve)');
+    const redemptionRate = new Uint8Array(80);
+
+    await createTokenSwap(CurveType.RedemptionRate, redemptionRate);
     console.log(
-      'Run test: createTokenSwap (constant product, used further in tests)',
+      'Run test: createTokenSwap (redemption rate curve, used further in tests)',
     );
-    await createTokenSwap(CurveType.ConstantProduct);
+    await createTokenSwap(CurveType.RedemptionRate, redemptionRate);
     console.log('Run test: deposit all token types');
     await depositAllTokenTypes();
     console.log('Run test: withdraw all token types');
@@ -79,14 +91,14 @@ const SWAP_PROGRAM_OWNER_FEE_ADDRESS =
   process.env.SWAP_PROGRAM_OWNER_FEE_ADDRESS;
 
 // Pool fees
-const TRADING_FEE_NUMERATOR = 25n;
-const TRADING_FEE_DENOMINATOR = 10000n;
-const OWNER_TRADING_FEE_NUMERATOR = 5n;
-const OWNER_TRADING_FEE_DENOMINATOR = 10000n;
-const OWNER_WITHDRAW_FEE_NUMERATOR = SWAP_PROGRAM_OWNER_FEE_ADDRESS ? 0n : 1n;
-const OWNER_WITHDRAW_FEE_DENOMINATOR = SWAP_PROGRAM_OWNER_FEE_ADDRESS ? 0n : 6n;
-const HOST_FEE_NUMERATOR = 20n;
-const HOST_FEE_DENOMINATOR = 100n;
+const TRADING_FEE_NUMERATOR = 0n;
+const TRADING_FEE_DENOMINATOR = 1n;
+const OWNER_TRADING_FEE_NUMERATOR = 0n;
+const OWNER_TRADING_FEE_DENOMINATOR = 1n;
+const OWNER_WITHDRAW_FEE_NUMERATOR = SWAP_PROGRAM_OWNER_FEE_ADDRESS ? 0n : 0n;
+const OWNER_WITHDRAW_FEE_DENOMINATOR = SWAP_PROGRAM_OWNER_FEE_ADDRESS ? 0n : 1n;
+const HOST_FEE_NUMERATOR = 0n;
+const HOST_FEE_DENOMINATOR = 1n;
 
 // Initial amount in each swap token
 let currentSwapTokenA = 1000000n;
@@ -97,12 +109,12 @@ let currentFeeAmount = 0n;
 // Because there is no withdraw fee in the production version, these numbers
 // need to get slightly tweaked in the two cases.
 const SWAP_AMOUNT_IN = 100000n;
-const SWAP_AMOUNT_OUT = SWAP_PROGRAM_OWNER_FEE_ADDRESS ? 90661n : 90674n;
-const SWAP_FEE = SWAP_PROGRAM_OWNER_FEE_ADDRESS ? 22727n : 22730n;
+const SWAP_FEE = 0n
+const SWAP_AMOUNT_OUT = SWAP_AMOUNT_IN - SWAP_FEE;
 const HOST_SWAP_FEE = SWAP_PROGRAM_OWNER_FEE_ADDRESS
   ? (SWAP_FEE * HOST_FEE_NUMERATOR) / HOST_FEE_DENOMINATOR
   : 0n;
-const OWNER_SWAP_FEE = SWAP_FEE - HOST_SWAP_FEE;
+const OWNER_SWAP_FEE = 0n;
 
 // Pool token amount minted on init
 const DEFAULT_POOL_TOKEN_AMOUNT = 1000000000n;
@@ -130,16 +142,23 @@ async function getConnection(): Promise<Connection> {
 
 export async function createTokenSwap(
   curveType: number,
-  curveParameters?: Uint8Array,
+  curveParameters: Uint8Array,
 ): Promise<void> {
   const connection = await getConnection();
   payer = await newAccountWithLamports(connection, 1000000000);
   owner = await newAccountWithLamports(connection, 1000000000);
   const tokenSwapAccount = Keypair.generate();
 
+  const current_time = await connection.getBlockTime(await connection.getSlot());
+  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 0);      // ray: 0-15
+  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 16);  // max_ssr: 16-31
+  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 32);      // ssr: 32-47
+  curveParameters.set(bigIntToLittleEndianBytes(BigInt(current_time!), 16), 48);      // rho: 48-63
+  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 64);      // chi: 64-79
+
   [authority, bumpSeed] = await PublicKey.findProgramAddress(
     [tokenSwapAccount.publicKey.toBuffer()],
-    TOKEN_SWAP_PROGRAM_ID,
+    NOVA_PSM_PROGRAM_ID,
   );
 
   console.log('creating pool mint');
@@ -245,7 +264,7 @@ export async function createTokenSwap(
     mintB,
     feeAccount,
     tokenAccountPool,
-    TOKEN_SWAP_PROGRAM_ID,
+    NOVA_PSM_PROGRAM_ID,
     TOKEN_PROGRAM_ID,
     TRADING_FEE_NUMERATOR,
     TRADING_FEE_DENOMINATOR,
@@ -263,7 +282,7 @@ export async function createTokenSwap(
   const fetchedTokenSwap = await TokenSwap.loadTokenSwap(
     connection,
     tokenSwapAccount.publicKey,
-    TOKEN_SWAP_PROGRAM_ID,
+    NOVA_PSM_PROGRAM_ID,
     swapPayer,
   );
 
@@ -631,8 +650,10 @@ export async function swap(): Promise<void> {
 
   if (poolAccount != null) {
     info = await getAccount(connection, poolAccount);
+    
     assert(info.amount == HOST_SWAP_FEE);
   }
+
 }
 
 function tradingTokensToPoolTokens(

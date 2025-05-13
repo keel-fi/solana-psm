@@ -2503,6 +2503,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61807f77802ff30975e01f4f071c8ba10c022052f98b3294119f3e615d13e5be"
 
 [[package]]
+name = "nova-psm"
+version = "1.0.0"
+dependencies = [
+ "arbitrary",
+ "arrayref",
+ "enum_dispatch",
+ "num-derive",
+ "num-traits",
+ "proptest",
+ "roots",
+ "solana-program",
+ "solana-program-test",
+ "solana-sdk",
+ "spl-math",
+ "spl-token",
+ "spl-token-2022",
+ "test-case",
+ "thiserror 2.0.12",
+ "tokio",
+]
+
+[[package]]
 name = "num"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7008,28 +7030,6 @@ dependencies = [
  "spl-pod",
  "spl-type-length-value",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "spl-token-swap"
-version = "3.0.0"
-dependencies = [
- "arbitrary",
- "arrayref",
- "enum_dispatch",
- "num-derive",
- "num-traits",
- "proptest",
- "roots",
- "solana-program",
- "solana-program-test",
- "solana-sdk",
- "spl-math",
- "spl-token",
- "spl-token-2022",
- "test-case",
- "thiserror 2.0.12",
- "tokio",
 ]
 
 [[package]]

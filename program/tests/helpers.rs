@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 
 use solana_program_test::{BanksClient, BanksClientError};
 use solana_sdk::{
@@ -14,7 +15,7 @@ use solana_program_test::{
     ProgramTestContext
 };
 use solana_program::pubkey;
-use spl_token_swap::{
+use nova_psm::{
     curve::redemption_rate::RedemptionRateCurve, permission::Permission, state::SwapVersion
 };
 use spl_token::{
@@ -23,13 +24,13 @@ use spl_token::{
     instruction::mint_to
 };
 
-pub const PROGRAM_ID: Pubkey = pubkey!("SwapsVeCiPHMUAtzQWZw7RjsKjgCjhwU55QGu4U1Szw");
+pub const PROGRAM_ID: Pubkey = pubkey!("5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv");
 
 pub async fn program_test_context() -> ProgramTestContext {
     let mut program_test = ProgramTest::default();
 
     program_test.add_program(
-        "spl_token_swap", 
+        "nova_psm", 
         PROGRAM_ID, 
         None
     );

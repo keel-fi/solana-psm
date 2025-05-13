@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Program state processor
 
 use {
@@ -344,7 +346,12 @@ impl Processor {
             swap_constraints.validate_fees(&fees)?;
         }
         fees.validate()?;
-        swap_curve.calculator.validate(Some(Clock::get()?.unix_timestamp as u128))?;
+
+        let timestamp_opt = match swap_curve.curve_type {
+            CurveType::RedemptionRateCurve => Some(Clock::get()?.unix_timestamp as u128),
+            _ => None
+        } ;
+        swap_curve.calculator.validate(timestamp_opt)?;
 
         let initial_amount = swap_curve.calculator.new_pool_supply();
 
@@ -382,6 +389,7 @@ impl Processor {
                 swap_info.key, 
                 super_admin_info.key
             )?;
+
             // pack permission in permission_info
             Permission::pack(permission, &mut permission_info.data.borrow_mut())?;
         }
@@ -399,8 +407,8 @@ impl Processor {
             fees,
             swap_curve,
         });
-        SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())?;
-        Ok(())
+        
+        SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())
     }
 
     /// Processes an [Swap](enum.Instruction.html).
@@ -1301,9 +1309,12 @@ impl Processor {
                 }
             ) => {
                 msg!("Instruction: InitializePermission");
+
+                let permission_authority_pubkey = Pubkey::new_from_array(permission_authority);
+
                 process_initialize_permission(
                     program_id, accounts, 
-                    permission_authority, 
+                    permission_authority_pubkey, 
                     is_super_admin, 
                     can_update_parameters
                 )
@@ -1605,6 +1616,7 @@ mod tests {
                     &self.pool_token_key,
                     self.fees.clone(),
                     self.swap_curve.clone(),
+                    None
                 )
                 .unwrap(),
                 vec![
@@ -3000,6 +3012,7 @@ mod tests {
                         &accounts.pool_token_key,
                         accounts.fees.clone(),
                         accounts.swap_curve.clone(),
+                        None
                     )
                     .unwrap(),
                     vec![
@@ -3225,6 +3238,7 @@ mod tests {
                         &accounts.pool_token_key,
                         accounts.fees.clone(),
                         accounts.swap_curve.clone(),
+                        None
                     )
                     .unwrap(),
                     vec![
@@ -3300,6 +3314,7 @@ mod tests {
                         &accounts.pool_token_key,
                         accounts.fees.clone(),
                         accounts.swap_curve.clone(),
+                        None
                     )
                     .unwrap(),
                     vec![
@@ -3371,6 +3386,7 @@ mod tests {
                     &accounts.pool_token_key,
                     accounts.fees,
                     accounts.swap_curve.clone(),
+                    None
                 )
                 .unwrap(),
                 vec![
@@ -6604,6 +6620,7 @@ mod tests {
                 &accounts.pool_token_key,
                 accounts.fees.clone(),
                 accounts.swap_curve.clone(),
+                None
             )
             .unwrap(),
             vec![
@@ -8309,6 +8326,7 @@ mod tests {
                 &accounts.pool_token_key,
                 accounts.fees.clone(),
                 accounts.swap_curve.clone(),
+                None
             )
             .unwrap(),
             vec![

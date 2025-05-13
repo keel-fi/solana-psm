@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import {Buffer} from 'buffer';
 import {struct, u8, blob} from '@solana/buffer-layout';
 import type {
@@ -16,8 +18,8 @@ import {
 import {u64, publicKey} from '@solana/buffer-layout-utils';
 import {loadAccount} from './util/account.js';
 
-export const TOKEN_SWAP_PROGRAM_ID: PublicKey = new PublicKey(
-  'SwapsVeCiPHMUAtzQWZw7RjsKjgCjhwU55QGu4U1Szw',
+export const NOVA_PSM_PROGRAM_ID: PublicKey = new PublicKey(
+  '5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv',
 );
 
 export const OLD_TOKEN_SWAP_PROGRAM_ID: PublicKey = new PublicKey(
@@ -67,7 +69,7 @@ export const TokenSwapLayout = struct<RawTokenSwap>([
   u64('hostFeeNumerator'),
   u64('hostFeeDenominator'),
   u8('curveType'),
-  blob(32, 'curveParameters'),
+  blob(80, 'curveParameters'),
 ]);
 
 export interface CreateInstruction {
@@ -95,6 +97,7 @@ export interface DepositAllInstruction {
   poolTokenAmount: bigint;
   maximumTokenA: bigint;
   maximumTokenB: bigint;
+  referralCode: Uint8Array;
 }
 
 export interface WithdrawAllInstruction {
@@ -102,24 +105,28 @@ export interface WithdrawAllInstruction {
   poolTokenAmount: bigint;
   minimumTokenA: bigint;
   minimumTokenB: bigint;
+  referralCode: Uint8Array;
 }
 
 export interface DepositSingleTokenTypeInstruction {
   instruction: number;
   sourceTokenAmount: bigint;
   minimumPoolTokenAmount: bigint;
+  referralCode: Uint8Array;
 }
 
 export interface WithdrawSingleTokenTypeInstruction {
   instruction: number;
   destinationTokenAmount: bigint;
   maximumPoolTokenAmount: bigint;
+  referralCode: Uint8Array;
 }
 
 export const CurveType = Object.freeze({
   ConstantProduct: 0, // Constant product curve, Uniswap-style
   ConstantPrice: 1, // Constant price curve, always X amount of A token for 1 B token, where X is defined at init
-  Offset: 2, // Offset curve, like Uniswap, but with an additional offset on the token B side
+  Offset: 2, // Offset curve, like Uniswap, but with an additional offset on the token B side,
+  RedemptionRate: 3 // Redemption rate curve, uses Rho, Chi and Ssr for determining conversion rate
 });
 
 /**
@@ -204,6 +211,7 @@ export class TokenSwap {
   static async getMinBalanceRentForExemptTokenSwap(
     connection: Connection,
   ): Promise<number> {
+
     return await connection.getMinimumBalanceForRentExemption(
       TokenSwapLayout.span,
     );
@@ -229,7 +237,19 @@ export class TokenSwap {
     hostFeeDenominator: bigint,
     curveType: number,
     curveParameters: Uint8Array = new Uint8Array(),
+    superAdmin: PublicKey,
+    payer: PublicKey
   ): TransactionInstruction {
+
+    const [permissionAccount] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("permission"),
+        Buffer.from(tokenSwapAccount.publicKey.toBytes()),
+         Buffer.from(superAdmin.toBytes())
+      ],
+      swapProgramId,
+    );
+
     const keys = [
       {pubkey: tokenSwapAccount.publicKey, isSigner: false, isWritable: true},
       {pubkey: authority, isSigner: false, isWritable: false},
@@ -239,6 +259,13 @@ export class TokenSwap {
       {pubkey: feeAccount, isSigner: false, isWritable: false},
       {pubkey: tokenAccountPool, isSigner: false, isWritable: true},
       {pubkey: poolTokenProgramId, isSigner: false, isWritable: false},
+      // authority pda (super admin)
+      {pubkey: permissionAccount, isSigner: false, isWritable: true},
+      // pubkey associated with authority
+      {pubkey: superAdmin, isSigner: false, isWritable: false},
+      {pubkey: payer, isSigner: true, isWritable: true},
+      // system program for creating authority pda
+      {pubkey: SystemProgram.programId, isSigner: false, isWritable: false},
     ];
     const commandDataLayout = struct<CreateInstruction>([
       u8('instruction'),
@@ -251,14 +278,15 @@ export class TokenSwap {
       u64('hostFeeNumerator'),
       u64('hostFeeDenominator'),
       u8('curveType'),
-      blob(32, 'curveParameters'),
+      blob(80, 'curveParameters'),
     ]);
     let data = Buffer.alloc(1024);
 
     // package curve parameters
     // NOTE: currently assume all curves take a single parameter, u64 int
     //       the remaining 24 of the 32 bytes available are filled with 0s
-    const curveParamsBuffer = Buffer.alloc(32);
+    // NOTE: updated to use 80 bytes for new RedemptionRateCurve
+    const curveParamsBuffer = Buffer.alloc(80);
     Buffer.from(curveParameters).copy(curveParamsBuffer);
 
     {
@@ -408,6 +436,7 @@ export class TokenSwap {
     // Allocate memory for the account
     const balanceNeeded =
       await TokenSwap.getMinBalanceRentForExemptTokenSwap(connection);
+
     const transaction = new Transaction();
     transaction.add(
       SystemProgram.createAccount({
@@ -439,6 +468,10 @@ export class TokenSwap {
       hostFeeDenominator,
       curveType,
       curveParameters,
+      // added this for extra AccountMeta needed in Redemption curve: super Admin
+      payer.publicKey,
+      // payer
+      payer.publicKey
     );
 
     transaction.add(instruction);
@@ -652,6 +685,8 @@ export class TokenSwap {
       u64('poolTokenAmount'),
       u64('maximumTokenA'),
       u64('maximumTokenB'),
+      // adding 8 bytes for referral code
+      blob(8, "referralCode")
     ]);
 
     const data = Buffer.alloc(dataLayout.span);
@@ -661,6 +696,7 @@ export class TokenSwap {
         poolTokenAmount,
         maximumTokenA,
         maximumTokenB,
+        referralCode: new Uint8Array(8)
       },
       data,
     );
@@ -769,6 +805,7 @@ export class TokenSwap {
       u64('poolTokenAmount'),
       u64('minimumTokenA'),
       u64('minimumTokenB'),
+      blob(8, "referralCode")
     ]);
 
     const data = Buffer.alloc(dataLayout.span);
@@ -778,6 +815,7 @@ export class TokenSwap {
         poolTokenAmount,
         minimumTokenA,
         minimumTokenB,
+        referralCode: new Uint8Array(8)
       },
       data,
     );
@@ -871,6 +909,7 @@ export class TokenSwap {
       u8('instruction'),
       u64('sourceTokenAmount'),
       u64('minimumPoolTokenAmount'),
+      blob(8, "referralCode")
     ]);
 
     const data = Buffer.alloc(dataLayout.span);
@@ -879,6 +918,7 @@ export class TokenSwap {
         instruction: 4, // depositSingleTokenTypeExactAmountIn instruction
         sourceTokenAmount,
         minimumPoolTokenAmount,
+        referralCode: new Uint8Array(8)
       },
       data,
     );
@@ -971,6 +1011,7 @@ export class TokenSwap {
       u8('instruction'),
       u64('destinationTokenAmount'),
       u64('maximumPoolTokenAmount'),
+      blob(8, "referralCode")
     ]);
 
     const data = Buffer.alloc(dataLayout.span);
@@ -979,6 +1020,7 @@ export class TokenSwap {
         instruction: 5, // withdrawSingleTokenTypeExactAmountOut instruction
         destinationTokenAmount,
         maximumPoolTokenAmount,
+        referralCode: new Uint8Array(8)
       },
       data,
     );

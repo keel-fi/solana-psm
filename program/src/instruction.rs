@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Instruction types
 
 #![allow(clippy::too_many_arguments)]
 
 #[cfg(feature = "fuzz")]
 use arbitrary::Arbitrary;
+use crate::curve::base::CurveType;
+
 use {
     crate::{
         curve::{base::SwapCurve, fees::Fees},
@@ -113,7 +117,7 @@ pub struct SetRates {
 #[derive(Clone, Debug, PartialEq)]
 pub struct InitializePermission {
     /// the pubkey of the new permission authority
-    pub permission_authority: Pubkey,
+    pub permission_authority: [u8; 32],
     /// is the new permission super admin
     pub is_super_admin: bool,
     /// can it update curve parameters
@@ -356,9 +360,13 @@ impl SwapInstruction {
                 })
             },
             7 => {
-                let (permission_authority, rest) = Self::unpack_pubkey(rest)?;
+                let (permission_authority, rest) = rest.split_at(32);
                 let (is_super_admin, rest) = Self::unpack_bool(rest)?;
                 let (can_update_parameters, _rest) = Self::unpack_bool(rest)?;
+
+                let permission_authority: [u8; 32] = permission_authority
+                    .try_into()
+                    .map_err(|_| ProgramError::InvalidInstructionData)?;
 
                 Self::InitializePermission(InitializePermission { 
                     permission_authority, 
@@ -386,17 +394,6 @@ impl SwapInstruction {
                 1 => Ok((true, rest)),
                 _ => Err(SwapError::InvalidInstruction.into()),
             }
-        } else {
-            Err(SwapError::InvalidInstruction.into())
-        }
-    }
-
-    fn unpack_pubkey(input: &[u8]) -> Result<(Pubkey, &[u8]), ProgramError> {
-        if input.len() >= 32 {
-            let (pubkey_bytes, rest) = input.split_at(32);
-            let pubkey = Pubkey::new_from_array(pubkey_bytes.try_into().map_err(|_| SwapError::InvalidInstruction)?);
-
-            Ok((pubkey, rest))
         } else {
             Err(SwapError::InvalidInstruction.into())
         }
@@ -505,7 +502,7 @@ impl SwapInstruction {
                 }
             ) => {
                 buf.push(7);
-                buf.extend_from_slice(&permission_authority.to_bytes());
+                buf.extend_from_slice(permission_authority);
                 buf.push(*is_super_admin as u8);
                 buf.push(*can_update_parameters as u8);
             },
@@ -524,6 +521,18 @@ impl SwapInstruction {
     }
 }
 
+/// Extyra accounts needed for RedemptionRate curve
+pub struct RedemptionRateExtraAccounts<'a> {
+    /// pda created at initialization
+    pub permission_account: &'a Pubkey,
+    /// authority of permission account
+    pub authority: &'a Pubkey,
+    /// payer of account creation
+    pub payer: &'a Pubkey,
+    /// system program
+    pub system_program: &'a Pubkey
+}
+
 /// Creates an 'initialize' instruction.
 pub fn initialize(
     program_id: &Pubkey,
@@ -537,11 +546,13 @@ pub fn initialize(
     destination_pubkey: &Pubkey,
     fees: Fees,
     swap_curve: SwapCurve,
+    redemption_rate_extra_accounts: Option<RedemptionRateExtraAccounts>
 ) -> Result<Instruction, ProgramError> {
+    let curve_type = swap_curve.curve_type.clone();
     let init_data = SwapInstruction::Initialize(Initialize { fees, swap_curve });
     let data = init_data.pack();
 
-    let accounts = vec![
+    let mut accounts = vec![
         AccountMeta::new(*swap_pubkey, true),
         AccountMeta::new_readonly(*authority_pubkey, false),
         AccountMeta::new_readonly(*token_a_pubkey, false),
@@ -551,6 +562,20 @@ pub fn initialize(
         AccountMeta::new(*destination_pubkey, false),
         AccountMeta::new_readonly(*token_program_id, false),
     ];
+
+    if curve_type == CurveType::RedemptionRateCurve {
+        let RedemptionRateExtraAccounts {
+            permission_account,
+            authority,
+            payer,
+            system_program
+        } = redemption_rate_extra_accounts.ok_or(ProgramError::InvalidInstructionData)?;
+
+        accounts.push(AccountMeta::new(*permission_account, false));
+        accounts.push(AccountMeta::new_readonly(*authority, false));
+        accounts.push(AccountMeta::new(*payer, true));
+        accounts.push(AccountMeta::new_readonly(*system_program, false));
+    }
 
     Ok(Instruction {
         program_id: *program_id,

@@ -1,15 +1,18 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 #![allow(clippy::arithmetic_side_effects)]
 use {
     arbitrary::Arbitrary,
     honggfuzz::fuzz,
     spl_math::precise_number::PreciseNumber,
     spl_token::error::TokenError,
-    spl_token_swap::{
+    nova_psm::{
         curve::{
             base::{CurveType, SwapCurve},
             calculator::TradeDirection,
             constant_price::ConstantPriceCurve,
             constant_product::ConstantProductCurve,
+            redemption_rate::RedemptionRateCurve,
             fees::Fees,
             offset::OffsetCurve,
         },
@@ -19,7 +22,7 @@ use {
             WithdrawSingleTokenTypeExactAmountOut,
         },
     },
-    spl_token_swap_fuzz::{
+    nova_psm_fuzz::{
         native_account_data::NativeAccountData,
         native_token::{get_token_balance, transfer},
         native_token_swap::NativeTokenSwap,
@@ -80,6 +83,8 @@ const INITIAL_SWAP_TOKEN_B_AMOUNT: u64 = 300_000_000_000;
 const INITIAL_USER_TOKEN_A_AMOUNT: u64 = 1_000_000_000;
 const INITIAL_USER_TOKEN_B_AMOUNT: u64 = 3_000_000_000;
 
+const RAY: u128 = 10u128.pow(27);
+
 fn main() {
     loop {
         fuzz!(|fuzz_data: FuzzData| { run_fuzz(fuzz_data) });
@@ -106,6 +111,7 @@ fn run_fuzz(fuzz_data: FuzzData) {
         host_fee_denominator,
     };
     let swap_curve = get_swap_curve(fuzz_data.curve_type);
+    
     let mut token_swap = NativeTokenSwap::new(
         fees,
         swap_curve.clone(),
@@ -213,13 +219,18 @@ fn run_fuzz(fuzz_data: FuzzData) {
     let swap_token_a_amount = get_token_balance(&token_swap.token_a_account) as u128;
     let swap_token_b_amount = get_token_balance(&token_swap.token_b_account) as u128;
 
+    let timestamp_opt = match swap_curve.curve_type {
+        CurveType::RedemptionRateCurve => Some(213123123123),
+        _ => None
+    };
+
     let initial_pool_value = swap_curve
         .calculator
-        .normalized_value(initial_swap_token_a_amount, initial_swap_token_b_amount)
+        .normalized_value(initial_swap_token_a_amount, initial_swap_token_b_amount, timestamp_opt)
         .unwrap();
     let pool_value = swap_curve
         .calculator
-        .normalized_value(swap_token_a_amount, swap_token_b_amount)
+        .normalized_value(swap_token_a_amount, swap_token_b_amount, timestamp_opt)
         .unwrap();
 
     let pool_token_amount = PreciseNumber::new(pool_token_amount).unwrap();
@@ -471,6 +482,13 @@ fn get_swap_curve(curve_type: CurveType) -> SwapCurve {
             CurveType::Offset => Arc::new(OffsetCurve {
                 token_b_offset: 100_000_000_000,
             }),
+            CurveType::RedemptionRateCurve => Arc::new(RedemptionRateCurve {
+                ray: RAY,
+                max_ssr: 0,
+                ssr: RAY,
+                rho: 0,
+                chi: RAY
+            })
         },
     }
 }
