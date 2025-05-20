@@ -10,6 +10,7 @@ use spl_math::{
     checked_ceil_div::CheckedCeilDiv, precise_number::PreciseNumber, uint::U256
 };
 use crate::error::SwapError;
+use shank::ShankType;
 
 use super::calculator::{
     map_zero_to_none, 
@@ -63,7 +64,7 @@ pub fn trading_tokens_to_pool_tokens(
 }
 
 /// RedemptionRateCurve struct implementing CurveCalculator
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, ShankType)]
 pub struct RedemptionRateCurve {
     /// Fixed-point scaling factor.
     pub ray: u128,

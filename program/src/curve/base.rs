@@ -4,6 +4,7 @@
 
 #[cfg(feature = "fuzz")]
 use arbitrary::Arbitrary;
+use shank::ShankType;
 use super::redemption_rate::RedemptionRateCurve;
 
 use {
@@ -29,7 +30,7 @@ use {
 /// Curve types supported by the token-swap program.
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, ShankType)]
 pub enum CurveType {
     /// Uniswap-style constant product curve, invariant = token_a_amount *
     /// token_b_amount
@@ -69,7 +70,7 @@ pub struct SwapCurve {
     pub curve_type: CurveType,
     /// The actual calculator, represented as a trait object to allow for many
     /// different types of curves
-    pub calculator: Arc<dyn CurveCalculator + Sync + Send>,
+    pub calculator: Arc<dyn CurveCalculator + Sync + Send >,
 }
 
 impl SwapCurve {
@@ -196,8 +197,7 @@ impl Default for SwapCurve {
 
 /// Clone takes advantage of pack / unpack to get around the difficulty of
 /// cloning dynamic objects.
-/// Note that this is only to be used for testing.
-#[cfg(any(test, feature = "fuzz"))]
+
 impl Clone for SwapCurve {
     fn clone(&self) -> Self {
         let mut packed_self = [0u8; Self::LEN];

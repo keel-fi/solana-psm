@@ -22,11 +22,12 @@ use {
         program_pack::{IsInitialized, Pack, Sealed},
     },
     spl_math::precise_number::PreciseNumber,
+    shank::ShankType
 };
 
 /// Offset curve, uses ConstantProduct under the hood, but adds an offset to
 /// one side on swap calculations
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, ShankType)]
 pub struct OffsetCurve {
     /// Amount to offset the token B liquidity account
     pub token_b_offset: u64,

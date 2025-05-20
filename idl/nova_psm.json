@@ -1,0 +1,1422 @@
+{
+  "version": "1.0.0",
+  "name": "nova_psm",
+  "instructions": [
+    {
+      "name": "Initialize",
+      "accounts": [
+        {
+          "name": "tokenSwap",
+          "isMut": true,
+          "isSigner": true,
+          "docs": [
+            "New Token-swap to create"
+          ]
+        },
+        {
+          "name": "swapAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "swap authority derived from`create_program_address(&[Token-swap account])"
+          ]
+        },
+        {
+          "name": "tokenA",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "token_a Account, must be non zero, owned by swap authority"
+          ]
+        },
+        {
+          "name": "tokenB",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "token_b Account, must be non zero, owned by swap authority"
+          ]
+        },
+        {
+          "name": "poolMint",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Pool Token Mint. Must be empty, owned by swap authority"
+          ]
+        },
+        {
+          "name": "feeAccount",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Pool Token Account to deposit trading and withdraw fees. Must be empty, not owned by swap authority"
+          ]
+        },
+        {
+          "name": "destinationAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Pool Token Account to deposit the initial pool token supply. Must be empty, not owned by swap authority"
+          ]
+        },
+        {
+          "name": "poolTokenProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Pool Token program id"
+          ]
+        },
+        {
+          "name": "permissionAccount",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "docs": [
+            "Permission account to create. Only required for RedemptionRateCurve"
+          ]
+        },
+        {
+          "name": "superAdmin",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "docs": [
+            "Super admin. Pubkey associated with permission account. Only required for RedemptionRateCurve"
+          ]
+        },
+        {
+          "name": "payer",
+          "isMut": true,
+          "isSigner": true,
+          "isOptional": true,
+          "docs": [
+            "Payer. Account that pays for permission creation. Only required for RedemptionRateCurve"
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "docs": [
+            "System program. Only required for RedemptionRateCurve"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "initialize",
+          "type": {
+            "defined": "Initialize"
+          }
+        }
+      ],
+      "discriminant": {
+        "type": "u8",
+        "value": 0
+      }
+    },
+    {
+      "name": "Swap",
+      "accounts": [
+        {
+          "name": "tokenSwap",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token-swap"
+          ]
+        },
+        {
+          "name": "swapAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Swap authority"
+          ]
+        },
+        {
+          "name": "userTransferAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "User transfer authority"
+          ]
+        },
+        {
+          "name": "sourceTokenAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_(A|B) SOURCE Account, amount is transferable by user transfer authority"
+          ]
+        },
+        {
+          "name": "sourceBaseAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_(A|B) Base Account to swap INTO. Must be the SOURCE token"
+          ]
+        },
+        {
+          "name": "destinationBaseAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_(A|B) Base Account to swap FROM. Must be the DESTINATION token"
+          ]
+        },
+        {
+          "name": "destinationTokenAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_(A|B) DESTINATION Account assigned to USER as the owner"
+          ]
+        },
+        {
+          "name": "poolMint",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Pool token mint, to generate trading fees"
+          ]
+        },
+        {
+          "name": "feeAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Fee account, to receive trading fees"
+          ]
+        },
+        {
+          "name": "sourceTokenMint",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token (A|B) SOURCE mint"
+          ]
+        },
+        {
+          "name": "destinationTokenMint",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token (A|B) DESTINATION mint"
+          ]
+        },
+        {
+          "name": "sourceTokenProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token (A|B) SOURCE program id"
+          ]
+        },
+        {
+          "name": "destinationTokenProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token (A|B) DESTINATION program id"
+          ]
+        },
+        {
+          "name": "poolTokenProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Pool Token program id"
+          ]
+        },
+        {
+          "name": "hostFeeAccount",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "docs": [
+            "Host fee account to receive additional trading fees"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "swap",
+          "type": {
+            "defined": "Swap"
+          }
+        }
+      ],
+      "discriminant": {
+        "type": "u8",
+        "value": 1
+      }
+    },
+    {
+      "name": "DepositAllTokenTypes",
+      "accounts": [
+        {
+          "name": "tokenSwap",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token-swap"
+          ]
+        },
+        {
+          "name": "swapAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Swap authority"
+          ]
+        },
+        {
+          "name": "userTransferAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "User transfer authority"
+          ]
+        },
+        {
+          "name": "tokenAUserAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_a user transfer authority can transfer amount"
+          ]
+        },
+        {
+          "name": "tokenBUserAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_b user transfer authority can transfer amount"
+          ]
+        },
+        {
+          "name": "tokenABaseAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_a Base Account to deposit into"
+          ]
+        },
+        {
+          "name": "tokenBBaseAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_b Base Account to deposit into"
+          ]
+        },
+        {
+          "name": "poolMint",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Pool MINT account, swap authority is the owner"
+          ]
+        },
+        {
+          "name": "poolAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Pool Account to deposit the generated tokens, user is the owner"
+          ]
+        },
+        {
+          "name": "tokenAMint",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token A mint"
+          ]
+        },
+        {
+          "name": "tokenBMint",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token B mint"
+          ]
+        },
+        {
+          "name": "tokenAProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token A program id"
+          ]
+        },
+        {
+          "name": "tokenBProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token B program id"
+          ]
+        },
+        {
+          "name": "poolTokenProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Pool Token program id"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "depositAllTokenTypes",
+          "type": {
+            "defined": "DepositAllTokenTypes"
+          }
+        }
+      ],
+      "discriminant": {
+        "type": "u8",
+        "value": 2
+      }
+    },
+    {
+      "name": "WithdrawAllTokenTypes",
+      "accounts": [
+        {
+          "name": "tokenSwap",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token-swap"
+          ]
+        },
+        {
+          "name": "swapAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Swap authority"
+          ]
+        },
+        {
+          "name": "userTransferAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "User transfer authority"
+          ]
+        },
+        {
+          "name": "poolMint",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Pool mint account, swap authority is the owner"
+          ]
+        },
+        {
+          "name": "sourcePoolAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "SOURCE Pool account, amount is transferable by user transfer authority"
+          ]
+        },
+        {
+          "name": "tokenASwapAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "token_a Swap Account to withdraw FROM"
+          ]
+        },
+        {
+          "name": "tokenBSwapAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "token_b Swap Account to withdraw FROM"
+          ]
+        },
+        {
+          "name": "tokenAUserAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "token_a user Account to credit"
+          ]
+        },
+        {
+          "name": "tokenBUserAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "token_b user Account to credit"
+          ]
+        },
+        {
+          "name": "feeAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Fee account, to receive withdrawal fees"
+          ]
+        },
+        {
+          "name": "tokenAMint",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token A mint"
+          ]
+        },
+        {
+          "name": "tokenBMint",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token B mint"
+          ]
+        },
+        {
+          "name": "poolTokenProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Pool Token program id"
+          ]
+        },
+        {
+          "name": "tokenAProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token A program id"
+          ]
+        },
+        {
+          "name": "tokenBProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token B program id"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "withdrawAllTokenTypes",
+          "type": {
+            "defined": "WithdrawAllTokenTypes"
+          }
+        }
+      ],
+      "discriminant": {
+        "type": "u8",
+        "value": 3
+      }
+    },
+    {
+      "name": "DepositSingleTokenTypeExactAmountIn",
+      "accounts": [
+        {
+          "name": "tokenSwap",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token-swap"
+          ]
+        },
+        {
+          "name": "swapAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Swap authority"
+          ]
+        },
+        {
+          "name": "userTransferAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "User transfer authority"
+          ]
+        },
+        {
+          "name": "sourceTokenAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_(A|B) SOURCE Account, amount is transferable by user transfer authority"
+          ]
+        },
+        {
+          "name": "tokenASwapAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_a Swap Account, may deposit INTO"
+          ]
+        },
+        {
+          "name": "tokenBSwapAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token_b Swap Account, may deposit INTO"
+          ]
+        },
+        {
+          "name": "poolMint",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Pool MINT account, swap authority is the owner"
+          ]
+        },
+        {
+          "name": "poolAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Pool Account to deposit the generated tokens, user is the owner"
+          ]
+        },
+        {
+          "name": "sourceTokenMint",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token (A|B) SOURCE mint"
+          ]
+        },
+        {
+          "name": "sourceTokenProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token (A|B) SOURCE program id"
+          ]
+        },
+        {
+          "name": "poolTokenProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Pool Token program id"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "depositSingleTokenTypeExactAmountIn",
+          "type": {
+            "defined": "DepositSingleTokenTypeExactAmountIn"
+          }
+        }
+      ],
+      "discriminant": {
+        "type": "u8",
+        "value": 4
+      }
+    },
+    {
+      "name": "WithdrawSingleTokenTypeExactAmountOut",
+      "accounts": [
+        {
+          "name": "tokenSwap",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token-swap"
+          ]
+        },
+        {
+          "name": "swapAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Swap authority"
+          ]
+        },
+        {
+          "name": "userTransferAuthority",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "User transfer authority"
+          ]
+        },
+        {
+          "name": "poolMint",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Pool mint account, swap authority is the owner"
+          ]
+        },
+        {
+          "name": "sourcePoolAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "SOURCE Pool account, amount is transferable by user transfer authority"
+          ]
+        },
+        {
+          "name": "tokenASwapAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "token_a Swap Account to potentially withdraw from"
+          ]
+        },
+        {
+          "name": "tokenBSwapAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "token_b Swap Account to potentially withdraw from"
+          ]
+        },
+        {
+          "name": "destinationTokenAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "token_(A|B) User Account to credit"
+          ]
+        },
+        {
+          "name": "feeAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Fee account, to receive withdrawal fees"
+          ]
+        },
+        {
+          "name": "destinationTokenMint",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token (A|B) DESTINATION mint"
+          ]
+        },
+        {
+          "name": "poolTokenProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Pool Token program id"
+          ]
+        },
+        {
+          "name": "destinationTokenProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token (A|B) DESTINATION program id"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "withdrawSingleTokenTypeExactAmountOut",
+          "type": {
+            "defined": "WithdrawSingleTokenTypeExactAmountOut"
+          }
+        }
+      ],
+      "discriminant": {
+        "type": "u8",
+        "value": 5
+      }
+    },
+    {
+      "name": "SetRates",
+      "accounts": [
+        {
+          "name": "tokenSwap",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Token-swap"
+          ]
+        },
+        {
+          "name": "permissionAccount",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Permission account"
+          ]
+        },
+        {
+          "name": "signer",
+          "isMut": false,
+          "isSigner": true,
+          "docs": [
+            "Signer, linked to permission account"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "setRates",
+          "type": {
+            "defined": "SetRates"
+          }
+        }
+      ],
+      "discriminant": {
+        "type": "u8",
+        "value": 6
+      }
+    },
+    {
+      "name": "InitializePermission",
+      "accounts": [
+        {
+          "name": "tokenSwap",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token-swap"
+          ]
+        },
+        {
+          "name": "adminPermissionAccount",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Permission account authorized to initialize other permissions"
+          ]
+        },
+        {
+          "name": "newPermissionAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "New permission account to be initialized, linked to pubkey passed in ix data"
+          ]
+        },
+        {
+          "name": "adminSigner",
+          "isMut": false,
+          "isSigner": true,
+          "docs": [
+            "Signer, associated to the admin permission account"
+          ]
+        },
+        {
+          "name": "payer",
+          "isMut": true,
+          "isSigner": true,
+          "docs": [
+            "Payer"
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "System program"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "initializePermission",
+          "type": {
+            "defined": "InitializePermission"
+          }
+        }
+      ],
+      "discriminant": {
+        "type": "u8",
+        "value": 7
+      }
+    },
+    {
+      "name": "UpdatePermission",
+      "accounts": [
+        {
+          "name": "tokenSwap",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Token-swap"
+          ]
+        },
+        {
+          "name": "adminPermissionAccount",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "Permission account authorized to update another permission"
+          ]
+        },
+        {
+          "name": "targetPermissionAccount",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "Permission account being updated"
+          ]
+        },
+        {
+          "name": "adminSigner",
+          "isMut": false,
+          "isSigner": true,
+          "docs": [
+            "Signer, associated to 1. permission account"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "updatePermission",
+          "type": {
+            "defined": "UpdatePermission"
+          }
+        }
+      ],
+      "discriminant": {
+        "type": "u8",
+        "value": 8
+      }
+    }
+  ],
+  "accounts": [
+    {
+      "name": "SwapV1",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "isInitialized",
+            "type": "bool"
+          },
+          {
+            "name": "bumpSeed",
+            "type": "u8"
+          },
+          {
+            "name": "tokenProgramId",
+            "type": "publicKey"
+          },
+          {
+            "name": "tokenA",
+            "type": "publicKey"
+          },
+          {
+            "name": "tokenB",
+            "type": "publicKey"
+          },
+          {
+            "name": "poolMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "tokenAMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "tokenBMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "poolFeeAccount",
+            "type": "publicKey"
+          },
+          {
+            "name": "fees",
+            "type": {
+              "defined": "Fees"
+            }
+          },
+          {
+            "name": "swapCurve",
+            "type": {
+              "defined": "SwapCurve"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "ConstantPriceCurve",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tokenBPrice",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Fees",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tradeFeeNumerator",
+            "type": "u64"
+          },
+          {
+            "name": "tradeFeeDenominator",
+            "type": "u64"
+          },
+          {
+            "name": "ownerTradeFeeNumerator",
+            "type": "u64"
+          },
+          {
+            "name": "ownerTradeFeeDenominator",
+            "type": "u64"
+          },
+          {
+            "name": "ownerWithdrawFeeNumerator",
+            "type": "u64"
+          },
+          {
+            "name": "ownerWithdrawFeeDenominator",
+            "type": "u64"
+          },
+          {
+            "name": "hostFeeNumerator",
+            "type": "u64"
+          },
+          {
+            "name": "hostFeeDenominator",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OffsetCurve",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tokenBOffset",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RedemptionRateCurve",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ray",
+            "type": "u128"
+          },
+          {
+            "name": "maxSsr",
+            "type": "u128"
+          },
+          {
+            "name": "ssr",
+            "type": "u128"
+          },
+          {
+            "name": "rho",
+            "type": "u128"
+          },
+          {
+            "name": "chi",
+            "type": "u128"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Initialize",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fees",
+            "type": {
+              "defined": "Fees"
+            }
+          },
+          {
+            "name": "swapCurve",
+            "type": {
+              "defined": "SwapCurve"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Swap",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amountIn",
+            "type": "u64"
+          },
+          {
+            "name": "minimumAmountOut",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositAllTokenTypes",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "poolTokenAmount",
+            "type": "u64"
+          },
+          {
+            "name": "maximumTokenAAmount",
+            "type": "u64"
+          },
+          {
+            "name": "maximumTokenBAmount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawAllTokenTypes",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "poolTokenAmount",
+            "type": "u64"
+          },
+          {
+            "name": "minimumTokenAAmount",
+            "type": "u64"
+          },
+          {
+            "name": "minimumTokenBAmount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositSingleTokenTypeExactAmountIn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sourceTokenAmount",
+            "type": "u64"
+          },
+          {
+            "name": "minimumPoolTokenAmount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawSingleTokenTypeExactAmountOut",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "destinationTokenAmount",
+            "type": "u64"
+          },
+          {
+            "name": "maximumPoolTokenAmount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SetRates",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ssr",
+            "type": "u128"
+          },
+          {
+            "name": "rho",
+            "type": "u128"
+          },
+          {
+            "name": "chi",
+            "type": "u128"
+          }
+        ]
+      }
+    },
+    {
+      "name": "InitializePermission",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "permissionAuthority",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "isSuperAdmin",
+            "type": "bool"
+          },
+          {
+            "name": "canUpdateParameters",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UpdatePermission",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "isSuperAdmin",
+            "type": "bool"
+          },
+          {
+            "name": "canUpdateParameters",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CurveType",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "ConstantProduct"
+          },
+          {
+            "name": "ConstantPrice"
+          },
+          {
+            "name": "Offset"
+          },
+          {
+            "name": "RedemptionRateCurve"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": 0,
+      "name": "AlreadyInUse",
+      "msg": "Swap account already in use"
+    },
+    {
+      "code": 1,
+      "name": "InvalidProgramAddress",
+      "msg": "Invalid program address generated from bump seed and key"
+    },
+    {
+      "code": 2,
+      "name": "InvalidOwner",
+      "msg": "Input account owner is not the program address"
+    },
+    {
+      "code": 3,
+      "name": "InvalidOutputOwner",
+      "msg": "Output pool account owner cannot be the program address"
+    },
+    {
+      "code": 4,
+      "name": "ExpectedMint",
+      "msg": "Deserialized account is not an SPL Token mint"
+    },
+    {
+      "code": 5,
+      "name": "ExpectedAccount",
+      "msg": "Deserialized account is not an SPL Token account"
+    },
+    {
+      "code": 6,
+      "name": "EmptySupply",
+      "msg": "Input token account empty"
+    },
+    {
+      "code": 7,
+      "name": "InvalidSupply",
+      "msg": "Pool token mint has a non-zero supply"
+    },
+    {
+      "code": 8,
+      "name": "InvalidDelegate",
+      "msg": "Token account has a delegate"
+    },
+    {
+      "code": 9,
+      "name": "InvalidInput",
+      "msg": "InvalidInput"
+    },
+    {
+      "code": 10,
+      "name": "IncorrectSwapAccount",
+      "msg": "Address of the provided swap token account is incorrect"
+    },
+    {
+      "code": 11,
+      "name": "IncorrectPoolMint",
+      "msg": "Address of the provided pool token mint is incorrect"
+    },
+    {
+      "code": 12,
+      "name": "InvalidOutput",
+      "msg": "InvalidOutput"
+    },
+    {
+      "code": 13,
+      "name": "CalculationFailure",
+      "msg": "General calculation failure due to overflow or underflow"
+    },
+    {
+      "code": 14,
+      "name": "InvalidInstruction",
+      "msg": "Invalid instruction"
+    },
+    {
+      "code": 15,
+      "name": "RepeatedMint",
+      "msg": "Swap input token accounts have the same mint"
+    },
+    {
+      "code": 16,
+      "name": "ExceededSlippage",
+      "msg": "Swap instruction exceeds desired slippage limit"
+    },
+    {
+      "code": 17,
+      "name": "InvalidCloseAuthority",
+      "msg": "Token account has a close authority"
+    },
+    {
+      "code": 18,
+      "name": "InvalidFreezeAuthority",
+      "msg": "Pool token mint has a freeze authority"
+    },
+    {
+      "code": 19,
+      "name": "IncorrectFeeAccount",
+      "msg": "Pool fee token account incorrect"
+    },
+    {
+      "code": 20,
+      "name": "ZeroTradingTokens",
+      "msg": "Given pool token amount results in zero trading tokens"
+    },
+    {
+      "code": 21,
+      "name": "FeeCalculationFailure",
+      "msg": "Fee calculation failed due to overflow, underflow, or unexpected 0"
+    },
+    {
+      "code": 22,
+      "name": "ConversionFailure",
+      "msg": "Conversion to u64 failed with an overflow or underflow"
+    },
+    {
+      "code": 23,
+      "name": "InvalidFee",
+      "msg": "The provided fee does not match the program owner's constraints"
+    },
+    {
+      "code": 24,
+      "name": "IncorrectTokenProgramId",
+      "msg": "The provided token program does not match the token program expected by the swap"
+    },
+    {
+      "code": 25,
+      "name": "UnsupportedCurveType",
+      "msg": "The provided curve type is not supported by the program owner"
+    },
+    {
+      "code": 26,
+      "name": "InvalidCurve",
+      "msg": "The provided curve parameters are invalid"
+    },
+    {
+      "code": 27,
+      "name": "UnsupportedCurveOperation",
+      "msg": "The operation cannot be performed on the given curve"
+    },
+    {
+      "code": 28,
+      "name": "InvalidFeeAccount",
+      "msg": "The pool fee account is invalid"
+    },
+    {
+      "code": 29,
+      "name": "MissingTimestamp",
+      "msg": "The timestamp is missing"
+    },
+    {
+      "code": 30,
+      "name": "InvalidRho",
+      "msg": "Invalid Rho"
+    },
+    {
+      "code": 31,
+      "name": "InvalidSsr",
+      "msg": "Invalid Ssr"
+    },
+    {
+      "code": 32,
+      "name": "InvalidChi",
+      "msg": "Invalid Chi"
+    },
+    {
+      "code": 33,
+      "name": "InvalidPermissionAddress",
+      "msg": "Invalid Permission address"
+    },
+    {
+      "code": 34,
+      "name": "InvalidUpdatePermission",
+      "msg": "Invalid curve update permission"
+    }
+  ],
+  "metadata": {
+    "origin": "shank",
+    "address": "5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv"
+  }
+}

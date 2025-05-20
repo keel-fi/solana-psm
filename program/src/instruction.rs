@@ -6,11 +6,10 @@
 
 #[cfg(feature = "fuzz")]
 use arbitrary::Arbitrary;
-use crate::curve::base::CurveType;
 
 use {
     crate::{
-        curve::{base::SwapCurve, fees::Fees},
+        curve::{base::{SwapCurve, CurveType}, fees::Fees},
         error::SwapError,
     },
     solana_program::{
@@ -20,11 +19,12 @@ use {
         pubkey::Pubkey,
     },
     std::{convert::TryInto, mem::size_of},
+    shank::{ShankInstruction, ShankType}
 };
 
 /// Initialize instruction data
 #[repr(C)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, ShankType)]
 pub struct Initialize {
     /// all swap fees
     pub fees: Fees,
@@ -36,7 +36,7 @@ pub struct Initialize {
 /// Swap instruction data
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, ShankType)]
 pub struct Swap {
     /// SOURCE amount to transfer, output to DESTINATION is based on the
     /// exchange rate
@@ -49,7 +49,7 @@ pub struct Swap {
 /// DepositAllTokenTypes instruction data
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, ShankType)]
 pub struct DepositAllTokenTypes {
     /// Pool token amount to transfer. token_a and token_b amount are set by
     /// the current exchange rate and size of the pool
@@ -63,7 +63,7 @@ pub struct DepositAllTokenTypes {
 /// WithdrawAllTokenTypes instruction data
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, ShankType)]
 pub struct WithdrawAllTokenTypes {
     /// Amount of pool tokens to burn. User receives an output of token a
     /// and b based on the percentage of the pool tokens that are returned.
@@ -77,7 +77,7 @@ pub struct WithdrawAllTokenTypes {
 /// Deposit one token type, exact amount in instruction data
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, ShankType)]
 pub struct DepositSingleTokenTypeExactAmountIn {
     /// Token amount to deposit
     pub source_token_amount: u64,
@@ -89,7 +89,7 @@ pub struct DepositSingleTokenTypeExactAmountIn {
 /// WithdrawSingleTokenTypeExactAmountOut instruction data
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, ShankType)]
 pub struct WithdrawSingleTokenTypeExactAmountOut {
     /// Amount of token A or B to receive
     pub destination_token_amount: u64,
@@ -101,7 +101,7 @@ pub struct WithdrawSingleTokenTypeExactAmountOut {
 /// Instruction data for updating rates of RedemptionRateCurve
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, ShankType)]
 pub struct SetRates {
     /// new ssr
     pub ssr: u128,
@@ -114,7 +114,7 @@ pub struct SetRates {
 /// Instruction data for initializing a new permission account
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, ShankType)]
 pub struct InitializePermission {
     /// the pubkey of the new permission authority
     pub permission_authority: [u8; 32],
@@ -127,7 +127,7 @@ pub struct InitializePermission {
 /// Instruction data for updating a permission account
 #[cfg_attr(feature = "fuzz", derive(Arbitrary))]
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, ShankType)]
 pub struct UpdatePermission {
     /// is super admin
     pub is_super_admin: bool,
@@ -137,7 +137,7 @@ pub struct UpdatePermission {
 
 /// Instructions supported by the token swap program.
 #[repr(C)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, ShankInstruction)]
 pub enum SwapInstruction {
     ///   Initializes a new swap
     ///
@@ -149,10 +149,36 @@ pub enum SwapInstruction {
     ///   4. `[writable]` Pool Token Mint. Must be empty, owned by swap
     ///      authority.
     ///   5. `[]` Pool Token Account to deposit trading and withdraw fees. Must
-    ///      be empty, not owned by swap authority
+    ///      be empty, not owned by swap authority.
     ///   6. `[writable]` Pool Token Account to deposit the initial pool token
     ///      supply. Must be empty, not owned by swap authority.
-    ///   7. `[]` Pool Token program id
+    ///   7. `[]` Pool Token program id.
+    ///   8. `[writable]` permission account to create. Only required for RedemptionRateCurve.
+    ///   9. `[]` Super admin. Pubkey associated with permission account. Only required for RedemptionRateCurve.
+    ///   10. `[writable, signer]` Payer. Account that pays for permission creation. Only required for RedemptionRateCurve.
+    ///   11. `[]` System program id.
+    #[account(0, writable, signer, name="token_swap", 
+        desc="New Token-swap to create")]
+    #[account(1, name="swap_authority", 
+        desc="swap authority derived from`create_program_address(&[Token-swap account])")]
+    #[account(2, name="token_a", 
+        desc="token_a Account, must be non zero, owned by swap authority")]
+    #[account(3, name="token_b", 
+        desc="token_b Account, must be non zero, owned by swap authority")]
+    #[account(4, writable, name="pool_mint", 
+        desc="Pool Token Mint. Must be empty, owned by swap authority")]
+    #[account(5, name="fee_account", 
+        desc="Pool Token Account to deposit trading and withdraw fees. Must be empty, not owned by swap authority")]
+    #[account(6, writable, name="destination_account", 
+        desc="Pool Token Account to deposit the initial pool token supply. Must be empty, not owned by swap authority")]
+    #[account(7, name="pool_token_program", desc="Pool Token program id")]
+    #[account(8, writable, optional, 
+        name="permission_account", desc="Permission account to create. Only required for RedemptionRateCurve")]
+    #[account(9, optional, name="super_admin", 
+        desc="Super admin. Pubkey associated with permission account. Only required for RedemptionRateCurve")]
+    #[account(10, writable, signer, optional, name="payer",
+        desc="Payer. Account that pays for permission creation. Only required for RedemptionRateCurve")]
+    #[account(11, optional, name="system_program", desc="System program. Only required for RedemptionRateCurve")]
     Initialize(Initialize),
 
     ///   Swap the tokens in the pool.
@@ -177,6 +203,33 @@ pub enum SwapInstruction {
     ///   13. `[]` Pool Token program id
     ///   14. `[optional, writable]` Host fee account to receive additional
     ///       trading fees
+    #[account(0, name="token_swap", desc="Token-swap")]
+    #[account(1, name="swap_authority", desc="Swap authority")]
+    #[account(2, name="user_transfer_authority", desc="User transfer authority")]
+    #[account(3, writable, name="source_token_account", 
+        desc="Token_(A|B) SOURCE Account, amount is transferable by user transfer authority")]
+    #[account(4, writable, name="source_base_account", 
+        desc="Token_(A|B) Base Account to swap INTO. Must be the SOURCE token")]
+    #[account(5, writable, name="destination_base_account", 
+        desc="Token_(A|B) Base Account to swap FROM. Must be the DESTINATION token")]
+    #[account(6, writable, name="destination_token_account", 
+        desc="Token_(A|B) DESTINATION Account assigned to USER as the owner")]
+    #[account(7, writable, name="pool_mint", 
+        desc="Pool token mint, to generate trading fees")]
+    #[account(8, writable, name="fee_account", 
+        desc="Fee account, to receive trading fees")]
+    #[account(9, name="source_token_mint", 
+        desc="Token (A|B) SOURCE mint")]
+    #[account(10, name="destination_token_mint", 
+        desc="Token (A|B) DESTINATION mint")]
+    #[account(11, name="source_token_program", 
+        desc="Token (A|B) SOURCE program id")]
+    #[account(12, name="destination_token_program", 
+        desc="Token (A|B) DESTINATION program id")]
+    #[account(13, name="pool_token_program", 
+        desc="Pool Token program id")]
+    #[account(14, writable, optional, name="host_fee_account", 
+        desc="Host fee account to receive additional trading fees")]
     Swap(Swap),
 
     ///   Deposit both types of tokens into the pool.  The output is a "pool"
@@ -198,6 +251,31 @@ pub enum SwapInstruction {
     ///   11. `[]` Token A program id
     ///   12. `[]` Token B program id
     ///   13. `[]` Pool Token program id
+    #[account(0, name="token_swap", desc="Token-swap")]
+    #[account(1, name="swap_authority", desc="Swap authority")]
+    #[account(2, name="user_transfer_authority", desc="User transfer authority")]
+    #[account(3, writable, name="token_a_user_account", 
+        desc="Token_a user transfer authority can transfer amount")]
+    #[account(4, writable, name="token_b_user_account", 
+        desc="Token_b user transfer authority can transfer amount")]
+    #[account(5, writable, name="token_a_base_account", 
+        desc="Token_a Base Account to deposit into")]
+    #[account(6, writable, name="token_b_base_account", 
+        desc="Token_b Base Account to deposit into")]
+    #[account(7, writable, name="pool_mint", 
+        desc="Pool MINT account, swap authority is the owner")]
+    #[account(8, writable, name="pool_account", 
+        desc="Pool Account to deposit the generated tokens, user is the owner")]
+    #[account(9, name="token_a_mint", 
+        desc="Token A mint")]
+    #[account(10, name="token_b_mint", 
+        desc="Token B mint")]
+    #[account(11, name="token_a_program", 
+        desc="Token A program id")]
+    #[account(12, name="token_b_program", 
+        desc="Token B program id")]
+    #[account(13, name="pool_token_program", 
+        desc="Pool Token program id")]
     DepositAllTokenTypes(DepositAllTokenTypes),
 
     ///   Withdraw both types of tokens from the pool at the current ratio,
@@ -220,6 +298,33 @@ pub enum SwapInstruction {
     ///   12. `[]` Pool Token program id
     ///   13. `[]` Token A program id
     ///   14. `[]` Token B program id
+    #[account(0, name="token_swap", desc="Token-swap")]
+    #[account(1, name="swap_authority", desc="Swap authority")]
+    #[account(2, name="user_transfer_authority", desc="User transfer authority")]
+    #[account(3, writable, name="pool_mint", 
+        desc="Pool mint account, swap authority is the owner")]
+    #[account(4, writable, name="source_pool_account", 
+        desc="SOURCE Pool account, amount is transferable by user transfer authority")]
+    #[account(5, writable, name="token_a_swap_account", 
+        desc="token_a Swap Account to withdraw FROM")]
+    #[account(6, writable, name="token_b_swap_account", 
+        desc="token_b Swap Account to withdraw FROM")]
+    #[account(7, writable, name="token_a_user_account", 
+        desc="token_a user Account to credit")]
+    #[account(8, writable, name="token_b_user_account", 
+        desc="token_b user Account to credit")]
+    #[account(9, writable, name="fee_account", 
+        desc="Fee account, to receive withdrawal fees")]
+    #[account(10, name="token_a_mint", 
+        desc="Token A mint")]
+    #[account(11, name="token_b_mint", 
+        desc="Token B mint")]
+    #[account(12, name="pool_token_program", 
+        desc="Pool Token program id")]
+    #[account(13, name="token_a_program", 
+        desc="Token A program id")]
+    #[account(14, name="token_b_program", 
+        desc="Token B program id")]
     WithdrawAllTokenTypes(WithdrawAllTokenTypes),
 
     ///   Deposit one type of tokens into the pool. The output is a "pool"
@@ -239,6 +344,25 @@ pub enum SwapInstruction {
     ///   8. `[]` Token (A|B) SOURCE mint
     ///   9. `[]` Token (A|B) SOURCE program id
     ///   10. `[]` Pool Token program id
+    #[account(0, name="token_swap", desc="Token-swap")]
+    #[account(1, name="swap_authority", desc="Swap authority")]
+    #[account(2, name="user_transfer_authority", desc="User transfer authority")]
+    #[account(3, writable, name="source_token_account", 
+        desc="Token_(A|B) SOURCE Account, amount is transferable by user transfer authority")]
+    #[account(4, writable, name="token_a_swap_account", 
+        desc="Token_a Swap Account, may deposit INTO")]
+    #[account(5, writable, name="token_b_swap_account", 
+        desc="Token_b Swap Account, may deposit INTO")]
+    #[account(6, writable, name="pool_mint", 
+        desc="Pool MINT account, swap authority is the owner")]
+    #[account(7, writable, name="pool_account", 
+        desc="Pool Account to deposit the generated tokens, user is the owner")]
+    #[account(8, name="source_token_mint", 
+        desc="Token (A|B) SOURCE mint")]
+    #[account(9, name="source_token_program", 
+        desc="Token (A|B) SOURCE program id")]
+    #[account(10, name="pool_token_program", 
+        desc="Pool Token program id")]
     DepositSingleTokenTypeExactAmountIn(DepositSingleTokenTypeExactAmountIn),
 
     ///   Withdraw one token type from the pool at the current ratio given the
@@ -257,6 +381,27 @@ pub enum SwapInstruction {
     ///   9. `[]` Token (A|B) DESTINATION mint
     ///   10. `[]` Pool Token program id
     ///   11. `[]` Token (A|B) DESTINATION program id
+    #[account(0, name="token_swap", desc="Token-swap")]
+    #[account(1, name="swap_authority", desc="Swap authority")]
+    #[account(2, name="user_transfer_authority", desc="User transfer authority")]
+    #[account(3, writable, name="pool_mint", 
+        desc="Pool mint account, swap authority is the owner")]
+    #[account(4, writable, name="source_pool_account", 
+        desc="SOURCE Pool account, amount is transferable by user transfer authority")]
+    #[account(5, writable, name="token_a_swap_account", 
+        desc="token_a Swap Account to potentially withdraw from")]
+    #[account(6, writable, name="token_b_swap_account", 
+        desc="token_b Swap Account to potentially withdraw from")]
+    #[account(7, writable, name="destination_token_account", 
+        desc="token_(A|B) User Account to credit")]
+    #[account(8, writable, name="fee_account", 
+        desc="Fee account, to receive withdrawal fees")]
+    #[account(9, name="destination_token_mint", 
+        desc="Token (A|B) DESTINATION mint")]
+    #[account(10, name="pool_token_program", 
+        desc="Pool Token program id")]
+    #[account(11, name="destination_token_program", 
+        desc="Token (A|B) DESTINATION program id")]
     WithdrawSingleTokenTypeExactAmountOut(WithdrawSingleTokenTypeExactAmountOut),
 
     /// Updates rho, chi and ssr in RedemptionRateCurve
@@ -265,7 +410,10 @@ pub enum SwapInstruction {
     /// 
     /// 0. `[writable]` Token-swap
     /// 1. `[]` Permission account
-    /// 2. `[]` Signer, linked to permission account
+    /// 2. `[signer]` Signer, linked to permission account
+    #[account(0, writable, name="token_swap", desc="Token-swap")]
+    #[account(1, name="permission_account", desc="Permission account")]
+    #[account(2, signer, name="signer", desc="Signer, linked to permission account")]
     SetRates(SetRates),
 
     /// Initialize a new permission
@@ -276,6 +424,17 @@ pub enum SwapInstruction {
     /// 3. `[signer]` Signer, associated to 1. permission account
     /// 4. `[writable, signer]` Payer 
     /// 5. `[]` System program
+    #[account(0, name="token_swap", desc="Token-swap")]
+    #[account(1, name="admin_permission_account", 
+        desc="Permission account authorized to initialize other permissions")]
+    #[account(2, writable, name="new_permission_account", 
+        desc="New permission account to be initialized, linked to pubkey passed in ix data")]
+    #[account(3, signer, name="admin_signer", 
+        desc="Signer, associated to the admin permission account")]
+    #[account(4, writable, signer, name="payer", 
+        desc="Payer")]
+    #[account(5, name="system_program", 
+        desc="System program")]
     InitializePermission(InitializePermission),
     
     /// Updates an existing permission,
@@ -285,6 +444,13 @@ pub enum SwapInstruction {
     /// 1. `[]` Permission account authorized to update another permission
     /// 2. `[writable]` Permission account being updated
     /// 3. `[signer]` Signer, associated to 1. permission account
+    #[account(0, name="token_swap", desc="Token-swap")]
+    #[account(1, name="admin_permission_account", 
+        desc="Permission account authorized to update another permission")]
+    #[account(2, writable, name="target_permission_account", 
+        desc="Permission account being updated")]
+    #[account(3, signer, name="admin_signer", 
+        desc="Signer, associated to 1. permission account")]
     UpdatePermission(UpdatePermission)
 }
 

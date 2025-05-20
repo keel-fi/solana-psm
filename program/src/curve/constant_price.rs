@@ -15,6 +15,7 @@ use {
         program_pack::{IsInitialized, Pack, Sealed},
     },
     spl_math::{checked_ceil_div::CheckedCeilDiv, precise_number::PreciseNumber, uint::U256},
+    shank::ShankType
 };
 
 /// Get the amount of pool tokens for the given amount of token A or B.
@@ -58,7 +59,7 @@ pub fn trading_tokens_to_pool_tokens(
 }
 
 /// ConstantPriceCurve struct implementing CurveCalculator
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, ShankType)]
 pub struct ConstantPriceCurve {
     /// Amount of token A required to get 1 token B
     pub token_b_price: u64,

@@ -22,6 +22,7 @@ use {
         state::{Account, AccountState},
     },
     std::sync::Arc,
+    shank::ShankAccount
 };
 
 /// Trait representing access to program state across all versions
@@ -107,7 +108,7 @@ impl SwapVersion {
 
 /// Program states.
 #[repr(C)]
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, ShankAccount)]
 pub struct SwapV1 {
     /// Initialized state.
     pub is_initialized: bool,
