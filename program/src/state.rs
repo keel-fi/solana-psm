@@ -78,7 +78,8 @@ impl SwapVersion {
         match src {
             Self::SwapV1(swap_info) => {
                 dst[0] = 1;
-                SwapV1::pack(swap_info, &mut dst[1..])
+                SwapV1::pack(swap_info, &mut dst[1..])?;
+                Ok(())
             }
         }
     }

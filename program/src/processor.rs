@@ -408,7 +408,9 @@ impl Processor {
             swap_curve,
         });
         
-        SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())
+        SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())?;
+
+        Ok(())
     }
 
     /// Processes an [Swap](enum.Instruction.html).
