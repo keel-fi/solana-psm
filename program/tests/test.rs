@@ -21,7 +21,8 @@ use solana_sdk::{
     signature::Keypair, 
     signer::Signer, 
     system_program::ID as SYSTEM_PROGRAM_ID, 
-    transaction::Transaction
+    transaction::Transaction,
+    system_instruction::transfer
 };
 use nova_psm::curve::{
     redemption_rate::RedemptionRateCurve, 
@@ -142,7 +143,16 @@ async fn test_redemption_curve_permission_system() {
         &mut context, 
         &swap_info, 
         &permission_account, 
-        &authority_keypair
+        &authority_keypair,
+        false // No transfer to permission PDA before creation
+    ).await;
+
+    test_permission_grant_and_update(
+        &mut context, 
+        &swap_info, 
+        &permission_account, 
+        &authority_keypair,
+        true // Transfer to permission PDA before creation
     ).await;
 }
 
@@ -499,7 +509,8 @@ async fn test_permission_grant_and_update(
     context: &mut ProgramTestContext,
     swap_info: &Pubkey,
     permission_account: &Pubkey,
-    authority_keypair: &Keypair
+    authority_keypair: &Keypair,
+    transfer_before_creation: bool,
 ) {
     let new_auth = Keypair::new();
 
@@ -508,6 +519,26 @@ async fn test_permission_grant_and_update(
         swap_info, 
         &new_auth.pubkey()
     );
+
+    // Transfer some lamports to new_permission, before creating it,
+    // making sure it does not cause DoS
+    if transfer_before_creation {
+        let tx = Transaction::new_signed_with_payer(
+            &[transfer(
+                &context.payer.pubkey(), 
+                &new_permission, 
+                1000000
+            )], 
+            Some(&context.payer.pubkey()), 
+            &[&context.payer], 
+            context.last_blockhash
+        );
+
+        context.banks_client
+            .process_transaction(tx)
+            .await
+            .unwrap();
+    }
 
     let init_data = vec![
         // init permission discrriminator
