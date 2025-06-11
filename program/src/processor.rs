@@ -333,6 +333,11 @@ impl Processor {
         if *pool_mint_info.key != fee_account.mint {
             return Err(SwapError::IncorrectPoolMint.into());
         }
+        if  token_a.mint == *pool_mint_info.key
+            || token_b.mint == *pool_mint_info.key
+        {
+            return Err(SwapError::IncorrectPoolMint.into());
+        }
 
         if let Some(swap_constraints) = swap_constraints {
             let owner_key = swap_constraints
