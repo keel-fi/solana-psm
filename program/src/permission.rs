@@ -6,10 +6,10 @@ use solana_program::{
     pubkey::Pubkey,
     program_pack::{IsInitialized, Pack, Sealed},
     program_error::ProgramError,
-    system_instruction::create_account,
+    system_instruction::{create_account, transfer, assign, allocate},
     sysvar::{Sysvar, rent::Rent},
     account_info::AccountInfo,
-    program::invoke_signed,
+    program::{invoke_signed, invoke},
     system_program::ID as SYSTEM_PROGRAM_ID,
     account_info::next_account_info,
 };
@@ -165,28 +165,92 @@ impl Permission {
         }
 
         let rent = Rent::get()?;
-        let len = Permission::LEN;
-        let lamports = rent.minimum_balance(len);
+        let space = Permission::LEN;
+        let lamports = rent.minimum_balance(space);
 
-        let ix = create_account(
-            payer.key, 
+        let current_lamports = permission_account.lamports();
+
+        let signers_seeds: &[&[&[u8]]] = &[&[
+            Self::PERMISSION_SEED,
+            swap.as_ref(),
+            permission_authority.as_ref(),
+            &[permission_bump]
+        ]];
+
+        // Permission account has no lamports, normal account creation
+        if current_lamports == 0 {
+            let ix = create_account(
+                payer.key, 
+                &permission_address, 
+                lamports, 
+                space as u64, 
+                &PROGRAM_ID
+            );
+
+            invoke_signed(
+                &ix, 
+                &[
+                    payer, 
+                    permission_account, 
+                    system_program
+                ], 
+                signers_seeds
+            )?;
+
+            return Ok(())
+        }
+
+        // Permission account has a balance, so we have to:
+        // 1. Transfer required lamports for rent exempt (if needed)
+        // 2. Allocate space for Permission account
+        // 3. Assign to current program
+
+        let required_lamports = lamports.max(1)
+            .saturating_sub(current_lamports);
+
+        if required_lamports > 0 {
+            let ix = transfer(
+                payer.key, 
+                &permission_address, 
+                required_lamports
+            );
+
+            invoke(
+                &ix, 
+                &[
+                    payer.clone(), 
+                    permission_account.clone(), 
+                    system_program.clone()
+                ]
+            )?;
+        }
+
+        let allocate_ix = allocate(
             &permission_address, 
-            lamports, 
-            len as u64, 
+            space as u64
+        );
+
+        invoke_signed(
+            &allocate_ix, 
+            &[
+                permission_account.clone(), 
+                system_program.clone()
+            ], 
+            signers_seeds
+        )?;
+
+        let assign_ix = assign(
+            &permission_address, 
             &PROGRAM_ID
         );
 
         invoke_signed(
-            &ix, 
+            &assign_ix, 
             &[
-                payer, permission_account, system_program
+                permission_account, 
+                system_program
             ], 
-            &[&[
-                Self::PERMISSION_SEED,
-                swap.as_ref(),
-                permission_authority.as_ref(),
-                &[permission_bump]
-            ]]
+            signers_seeds
         )?;
 
         Ok(())

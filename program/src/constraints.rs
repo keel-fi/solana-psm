@@ -76,7 +76,11 @@ const FEES: &Fees = &Fees {
     host_fee_denominator: 100,
 };
 #[cfg(feature = "production")]
-const VALID_CURVE_TYPES: &[CurveType] = &[CurveType::ConstantPrice, CurveType::ConstantProduct];
+const VALID_CURVE_TYPES: &[CurveType] = &[
+    CurveType::ConstantPrice, 
+    CurveType::ConstantProduct, 
+    CurveType::RedemptionRateCurve
+];
 
 /// Fee structure defined by program creator in order to enforce certain
 /// fees when others use the program.  Adds checks on pool creation and
