@@ -112,36 +112,23 @@ impl CurveCalculator for ConstantPriceCurve {
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
         round_direction: RoundDirection,
-        timestamp: Option<u128>
     ) -> Option<TradingTokenResult> {
-        let token_b_price = self.token_b_price as u128;
-        let total_value = self
-            .normalized_value(swap_token_a_amount, swap_token_b_amount, timestamp)?
-            .to_imprecise()?;
-
         let (token_a_amount, token_b_amount) = match round_direction {
-            RoundDirection::Floor => {
-                let token_a_amount = pool_tokens
-                    .checked_mul(total_value)?
-                    .checked_div(pool_token_supply)?;
-                let token_b_amount = pool_tokens
-                    .checked_mul(total_value)?
-                    .checked_div(token_b_price)?
-                    .checked_div(pool_token_supply)?;
-                (token_a_amount, token_b_amount)
-            }
+            RoundDirection::Floor => (
+                pool_tokens.checked_mul(swap_token_a_amount)?
+                    .checked_div(pool_token_supply)?,
+                pool_tokens.checked_mul(swap_token_b_amount)?
+                    .checked_div(pool_token_supply)?,
+            ),
             RoundDirection::Ceiling => {
-                let (token_a_amount, _) = pool_tokens
-                    .checked_mul(total_value)?
+                let (a, _) = pool_tokens.checked_mul(swap_token_a_amount)?
                     .checked_ceil_div(pool_token_supply)?;
-                let (pool_value_as_token_b, _) = pool_tokens
-                    .checked_mul(total_value)?
-                    .checked_ceil_div(token_b_price)?;
-                let (token_b_amount, _) =
-                    pool_value_as_token_b.checked_ceil_div(pool_token_supply)?;
-                (token_a_amount, token_b_amount)
+                let (b, _) = pool_tokens.checked_mul(swap_token_b_amount)?
+                    .checked_ceil_div(pool_token_supply)?;
+                (a, b)
             }
         };
+
         Some(TradingTokenResult {
             token_a_amount,
             token_b_amount,
@@ -498,7 +485,6 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Floor,
-                    None
                 )
                 .unwrap();
             prop_assume!(withdraw_result.token_a_amount <= swap_token_a_amount);
@@ -608,7 +594,6 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Ceiling,
-                    None
                 )
                 .unwrap();
             let new_swap_token_a_amount = swap_token_a_amount + deposit_result.token_a_amount;
@@ -658,7 +643,6 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Floor,
-                    None
                 )
                 .unwrap();
             prop_assume!(withdraw_result.token_a_amount <= swap_token_a_amount);

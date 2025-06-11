@@ -71,7 +71,6 @@ impl CurveCalculator for OffsetCurve {
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
         round_direction: RoundDirection,
-        _timestamp: Option<u128>
     ) -> Option<TradingTokenResult> {
         let token_b_offset = self.token_b_offset as u128;
         pool_tokens_to_trading_tokens(
@@ -441,7 +440,6 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Floor,
-                    None
                 )
                 .unwrap();
             prop_assume!(withdraw_result.token_b_amount <= swap_token_b_amount); // avoid overdrawing to 0 for calc
@@ -591,7 +589,6 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Floor,
-                    None
                 )
                 .unwrap();
             prop_assume!(withdraw_result.token_b_amount <= swap_token_b_amount); // avoid overdrawing to 0 for calc
