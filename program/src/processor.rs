@@ -288,6 +288,7 @@ impl Processor {
             }
             pool_mint.base
         };
+
         if *authority_info.key != token_a.owner {
             return Err(SwapError::InvalidOwner.into());
         }
