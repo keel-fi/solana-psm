@@ -197,7 +197,6 @@ impl CurveCalculator for ConstantProductCurve {
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
         round_direction: RoundDirection,
-        _timestamp: Option<u128>
     ) -> Option<TradingTokenResult> {
         pool_tokens_to_trading_tokens(
             pool_tokens,
@@ -322,7 +321,6 @@ mod tests {
                 token_a,
                 token_b,
                 RoundDirection::Ceiling,
-                None
             )
             .unwrap();
         assert_eq!(results.token_a_amount, expected_a);
@@ -340,10 +338,10 @@ mod tests {
     fn fail_trading_token_conversion() {
         let calculator = ConstantProductCurve {};
         let results =
-            calculator.pool_tokens_to_trading_tokens(5, 10, u128::MAX, 0, RoundDirection::Floor, None);
+            calculator.pool_tokens_to_trading_tokens(5, 10, u128::MAX, 0, RoundDirection::Floor);
         assert!(results.is_none());
         let results =
-            calculator.pool_tokens_to_trading_tokens(5, 10, 0, u128::MAX, RoundDirection::Floor, None);
+            calculator.pool_tokens_to_trading_tokens(5, 10, 0, u128::MAX, RoundDirection::Floor);
         assert!(results.is_none());
     }
 

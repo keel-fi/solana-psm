@@ -723,7 +723,6 @@ impl Processor {
                 u128::from(token_a.amount),
                 u128::from(token_b.amount),
                 RoundDirection::Ceiling,
-                token_swap.get_current_timestamp_opt()?
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
         let token_a_amount = to_u64(results.token_a_amount)?;
@@ -849,7 +848,6 @@ impl Processor {
                 u128::from(token_a.amount),
                 u128::from(token_b.amount),
                 RoundDirection::Floor,
-                token_swap.get_current_timestamp_opt()?
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
         let token_a_amount = to_u64(results.token_a_amount)?;
@@ -4859,7 +4857,6 @@ mod tests {
                     swap_token_a.base.amount.into(),
                     swap_token_b.base.amount.into(),
                     RoundDirection::Floor,
-                    accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap();
             assert_eq!(
@@ -4940,7 +4937,6 @@ mod tests {
                     swap_token_a.base.amount.into(),
                     swap_token_b.base.amount.into(),
                     RoundDirection::Floor,
-                    accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap();
             let token_a = StateWithExtensions::<Account>::unpack(&token_a_account.data).unwrap();
@@ -7719,9 +7715,9 @@ mod tests {
         let host_fee_numerator = 10;
         let host_fee_denominator = 100;
 
-        // initialize "unbalanced", so that withdrawing all will have some issues
-        // A: 1_000_000_000
-        // B: 2_000_000_000 (1_000 * 2_000_000)
+        // Pool starts UNBALANCED on purpose:
+        //   * A: 1_000_000_000 units
+        //   * B: 1 000 units (worth 2 000 000 each)
         let swap_token_a_amount = 1_000_000_000;
         let swap_token_b_amount = 1_000;
         let token_b_price = 2_000_000;
@@ -7770,10 +7766,8 @@ mod tests {
         let pool_key = accounts.pool_token_key;
         let mut pool_account = accounts.pool_token_account.clone();
 
-        // WithdrawAllTokenTypes will not take all token A and B, since their
-        // ratio is unbalanced.  It will try to take 1_500_000_000 worth of
-        // each token, which means 1_500_000_000 token A, and 750 token B.
-        // With no slippage, this will leave 250 token B in the pool.
+        // We try to take out *all* pool tokens, but we demand one more token-B
+        // than the pool actually has. The program must throw ExceededSlippage.
         assert_eq!(
             Err(SwapError::ExceededSlippage.into()),
             accounts.withdraw_all_token_types(
@@ -7786,10 +7780,12 @@ mod tests {
                 &mut token_b_account,
                 total_pool.try_into().unwrap(),
                 swap_token_a_amount,
-                swap_token_b_amount,
+                swap_token_b_amount + 1,
             )
         );
 
+        // Now we ask again but accept *any* amount (min = 0). Everything is
+        // withdrawn and the pool is emptied.
         accounts
             .withdraw_all_token_types(
                 &user_key,
@@ -7808,15 +7804,14 @@ mod tests {
         let token_a = StateWithExtensions::<Account>::unpack(&token_a_account.data).unwrap();
         assert_eq!(token_a.base.amount, swap_token_a_amount);
         let token_b = StateWithExtensions::<Account>::unpack(&token_b_account.data).unwrap();
-        assert_eq!(token_b.base.amount, 750);
-        let swap_token_a =
-            StateWithExtensions::<Account>::unpack(&accounts.token_a_account.data).unwrap();
+        assert_eq!(token_b.base.amount, swap_token_b_amount);
+        let swap_token_a = StateWithExtensions::<Account>::unpack(&accounts.token_a_account.data).unwrap();
         assert_eq!(swap_token_a.base.amount, 0);
-        let swap_token_b =
-            StateWithExtensions::<Account>::unpack(&accounts.token_b_account.data).unwrap();
-        assert_eq!(swap_token_b.base.amount, 250);
+        let swap_token_b = StateWithExtensions::<Account>::unpack(&accounts.token_b_account.data).unwrap();
+        assert_eq!(swap_token_b.base.amount, 0);
 
-        // deposit now, not enough to cover the tokens already in there
+        // After a full withdrawal the LP-token mint has zero supply.
+        // Any deposit creates 0 LP tokens, so we expect ZeroTradingTokens.
         let token_b_amount = 10;
         let token_a_amount = token_b_amount * token_b_price;
         let (
@@ -7835,7 +7830,7 @@ mod tests {
         );
 
         assert_eq!(
-            Err(SwapError::ExceededSlippage.into()),
+            Err(SwapError::ZeroTradingTokens.into()),
             accounts.deposit_all_token_types(
                 &withdrawer_key,
                 &token_a_key,
@@ -7850,7 +7845,6 @@ mod tests {
             )
         );
 
-        // deposit enough tokens, success!
         let token_b_amount = 125;
         let token_a_amount = token_b_amount * token_b_price;
         let (
@@ -7868,20 +7862,22 @@ mod tests {
             0,
         );
 
-        accounts
-            .deposit_all_token_types(
-                &withdrawer_key,
-                &token_a_key,
-                &mut token_a_account,
-                &token_b_key,
-                &mut token_b_account,
-                &pool_key,
-                &mut pool_account,
-                1, // doesn't matter
-                token_a_amount,
-                token_b_amount,
-            )
-            .unwrap();
+        assert_eq!(
+            Err(SwapError::ZeroTradingTokens.into()),
+            accounts
+                .deposit_all_token_types(
+                    &withdrawer_key,
+                    &token_a_key,
+                    &mut token_a_account,
+                    &token_b_key,
+                    &mut token_b_account,
+                    &pool_key,
+                    &mut pool_account,
+                    1, // doesn't matter
+                    token_a_amount,
+                    token_b_amount,
+                )
+        )
     }
 
     #[test_case(spl_token::id(), spl_token::id(), spl_token::id(); "all-token")]
