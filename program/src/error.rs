@@ -138,6 +138,9 @@ pub enum SwapError {
     /// Signer does not have valid permission account for curve updates.
     #[error("Invalid curve update permission")]
     InvalidUpdatePermission,
+    /// Invalid Ray.
+    #[error("Invalid ray scaling factor")]
+    InvalidRay,
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {
@@ -238,6 +241,9 @@ impl PrintProgramError for SwapError {
             },
             SwapError::InvalidUpdatePermission => {
                 msg!("Error: Invalid update permission")
+            },
+            SwapError::InvalidRay => {
+                msg!("Error: Invalid Ray")
             }
         }
     }

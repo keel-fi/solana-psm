@@ -351,6 +351,12 @@ impl CurveCalculator for RedemptionRateCurve {
     }
 
     fn validate(&self, timestamp: Option<u128>) -> Result<(), SwapError> {
+        const CANONICAL_RAY: u128 = 1_000_000_000_000_000_000_000_000_000;
+
+        if self.ray != CANONICAL_RAY {
+            return Err(SwapError::InvalidRay);
+        }
+
         let timestamp = timestamp
             .ok_or(SwapError::MissingTimestamp)?;
 
