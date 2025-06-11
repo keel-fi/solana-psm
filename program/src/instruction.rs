@@ -141,7 +141,7 @@ pub struct UpdatePermission {
 pub enum SwapInstruction {
     ///   Initializes a new swap
     ///
-    ///   0. `[writable, signer]` New Token-swap to create.
+    ///   0. `[writable]` New Token-swap to create.
     ///   1. `[]` swap authority derived from
     ///      `create_program_address(&[Token-swap account])`
     ///   2. `[]` token_a Account. Must be non zero, owned by swap authority.
