@@ -4,6 +4,8 @@
 
 #[cfg(feature = "production")]
 use std::option_env;
+use spl_token_2022::{extension::{BaseStateWithExtensions, ExtensionType, StateWithExtensions}, state::Mint};
+
 use {
     crate::{
         curve::{
@@ -102,6 +104,36 @@ pub const SWAP_CONSTRAINTS: Option<SwapConstraints> = {
         None
     }
 };
+
+const INVALID_POOL_MINT_EXTENSIONS: &[ExtensionType] = &[
+    ExtensionType::NonTransferable,
+    ExtensionType::PermanentDelegate,
+    ExtensionType::MintCloseAuthority,
+];
+
+const INVALID_TOKEN_A_B_EXTENSIONS: &[ExtensionType] = &[
+    ExtensionType::PermanentDelegate,
+    ExtensionType::TransferFeeConfig,
+];
+
+/// todo comment
+pub fn validate_mint_extensions(
+    state: &StateWithExtensions<Mint>,
+    is_pool_mint: bool,
+) -> Result<(), ProgramError> {
+    let extensions = state.get_extension_types()?;
+    let invalid_entensions = if is_pool_mint {
+        INVALID_POOL_MINT_EXTENSIONS
+    } else {
+        INVALID_TOKEN_A_B_EXTENSIONS
+    };
+
+    if extensions.iter().any(|e| invalid_entensions.contains(e)) {
+        return Err(SwapError::UnsupportedTokenExtension.into());
+    }
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

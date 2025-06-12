@@ -45,8 +45,8 @@ async fn test_redemption_rate_curve_creation_and_update() {
     let (
         swap_info,
         authority,
-        _token_a_mint,
-        _token_b_mint,
+        token_a_mint,
+        token_b_mint,
         pool_mint,
         token_a_account,
         token_b_account,
@@ -67,6 +67,8 @@ async fn test_redemption_rate_curve_creation_and_update() {
         token_a_account,
         token_b_account,
         pool_mint,
+        token_a_mint,
+        token_b_mint,
         fee_account,
         destination_account,
         0
@@ -94,8 +96,8 @@ async fn test_redemption_curve_permission_system() {
     let (
         swap_info,
         authority,
-        _token_a_mint,
-        _token_b_mint,
+        token_a_mint,
+        token_b_mint,
         pool_mint,
         token_a_account,
         token_b_account,
@@ -121,6 +123,8 @@ async fn test_redemption_curve_permission_system() {
         token_a_account,
         token_b_account,
         pool_mint,
+        token_a_mint,
+        token_b_mint,
         fee_account,
         destination_account,
         0
@@ -165,8 +169,8 @@ async fn test_rpow_performace_with_duration() {
     let (
         swap_info,
         authority,
-        _token_a_mint,
-        _token_b_mint,
+        token_a_mint,
+        token_b_mint,
         pool_mint,
         token_a_account,
         token_b_account,
@@ -187,6 +191,8 @@ async fn test_rpow_performace_with_duration() {
         token_a_account,
         token_b_account,
         pool_mint,
+        token_a_mint,
+        token_b_mint,
         fee_account,
         destination_account,
         ONE_HUNDRED_PCT_APY_SSR
@@ -229,8 +235,8 @@ async fn test_rpow_performance_with_different_max_ssr() {
         let (
             swap_info,
             authority,
-            _token_a_mint,
-            _token_b_mint,
+            token_a_mint,
+            token_b_mint,
             pool_mint,
             token_a_account,
             token_b_account,
@@ -252,6 +258,8 @@ async fn test_rpow_performance_with_different_max_ssr() {
             token_a_account,
             token_b_account,
             pool_mint,
+            token_a_mint,
+            token_b_mint,
             fee_account,
             destination_account,
             max_ssr
@@ -634,6 +642,8 @@ async fn create_redemption_rate_curve(
     token_a_account: Pubkey,
     token_b_account: Pubkey,
     pool_mint: Pubkey,
+    token_a_mint: Pubkey,
+    token_b_mint: Pubkey,
     fee_account: Pubkey,
     destination_account: Pubkey,
     max_ssr: u128
@@ -649,6 +659,8 @@ async fn create_redemption_rate_curve(
         AccountMeta::new_readonly(token_a_account, false),
         AccountMeta::new_readonly(token_b_account, false),
         AccountMeta::new(pool_mint, false),
+        AccountMeta::new(token_a_mint, false),
+        AccountMeta::new(token_b_mint, false),
         AccountMeta::new_readonly(fee_account, false),
         AccountMeta::new(destination_account, false),
         AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),

@@ -148,11 +148,13 @@ pub enum SwapInstruction {
     ///   3. `[]` token_b Account. Must be non zero, owned by swap authority.
     ///   4. `[writable]` Pool Token Mint. Must be empty, owned by swap
     ///      authority.
-    ///   5. `[]` Pool Token Account to deposit trading and withdraw fees. Must
+    ///   5. `[]` Token A Mint.
+    ///   6. `[]` Token B Mint.
+    ///   7. `[]` Pool Token Account to deposit trading and withdraw fees. Must
     ///      be empty, not owned by swap authority
-    ///   6. `[writable]` Pool Token Account to deposit the initial pool token
+    ///   8. `[writable]` Pool Token Account to deposit the initial pool token
     ///      supply. Must be empty, not owned by swap authority.
-    ///   7. `[]` Pool Token program id
+    ///   9. `[]` Pool Token program id
     Initialize(Initialize),
 
     ///   Swap the tokens in the pool.
@@ -542,6 +544,8 @@ pub fn initialize(
     token_a_pubkey: &Pubkey,
     token_b_pubkey: &Pubkey,
     pool_pubkey: &Pubkey,
+    token_a_mint_pubkey: &Pubkey,
+    token_b_mint_pubkey: &Pubkey,
     fee_pubkey: &Pubkey,
     destination_pubkey: &Pubkey,
     fees: Fees,
@@ -558,6 +562,8 @@ pub fn initialize(
         AccountMeta::new_readonly(*token_a_pubkey, false),
         AccountMeta::new_readonly(*token_b_pubkey, false),
         AccountMeta::new(*pool_pubkey, false),
+        AccountMeta::new_readonly(*token_a_mint_pubkey, false),
+        AccountMeta::new_readonly(*token_b_mint_pubkey, false),
         AccountMeta::new_readonly(*fee_pubkey, false),
         AccountMeta::new(*destination_pubkey, false),
         AccountMeta::new_readonly(*token_program_id, false),

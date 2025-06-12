@@ -141,6 +141,9 @@ pub enum SwapError {
     /// Invalid Ray.
     #[error("Invalid ray scaling factor")]
     InvalidRay,
+    /// Unsupported token extension.
+    #[error("Unsupported token extension.")]
+    UnsupportedTokenExtension
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {
@@ -244,6 +247,9 @@ impl PrintProgramError for SwapError {
             },
             SwapError::InvalidRay => {
                 msg!("Error: Invalid Ray")
+            },
+            SwapError::UnsupportedTokenExtension => {
+                msg!("Error: Unsupported token extension")
             }
         }
     }
