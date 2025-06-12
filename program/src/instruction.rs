@@ -241,6 +241,15 @@ pub enum SwapInstruction {
     ///   8. `[]` Token (A|B) SOURCE mint
     ///   9. `[]` Token (A|B) SOURCE program id
     ///   10. `[]` Pool Token program id
+    ///   11. `[writable]` Pool fee account *(optional)*  
+    ///   12. `[writable]` Host-fee account *(optional)*  
+    ///
+    ///   If accounts 11–12 are supplied, the owner-fee portion of the deposit is
+    ///   converted to pool-tokens and minted:
+    ///   * A share to the host-fee account (if present and non-zero)  
+    ///   * The remainder to the pool-fee account.  
+    ///   If they are omitted, the owner-fee remains in the pool, preserving
+    ///   pre-upgrade behaviour.
     DepositSingleTokenTypeExactAmountIn(DepositSingleTokenTypeExactAmountIn),
 
     ///   Withdraw one token type from the pool at the current ratio given the
@@ -259,6 +268,7 @@ pub enum SwapInstruction {
     ///   9. `[]` Token (A|B) DESTINATION mint
     ///   10. `[]` Pool Token program id
     ///   11. `[]` Token (A|B) DESTINATION program id
+    ///   12. `[writable]` Host-fee account *(optional)*
     WithdrawSingleTokenTypeExactAmountOut(WithdrawSingleTokenTypeExactAmountOut),
 
     /// Updates rho, chi and ssr in RedemptionRateCurve
