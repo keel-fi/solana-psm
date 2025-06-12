@@ -4,7 +4,7 @@
 
 use {
     crate::{
-        constraints::{SwapConstraints, SWAP_CONSTRAINTS}, curve::{
+        constraints::{validate_mint_extensions, SwapConstraints, SWAP_CONSTRAINTS}, curve::{
             base::{CurveType, SwapCurve},
             calculator::{RoundDirection, TradeDirection},
             fees::Fees,
@@ -14,24 +14,13 @@ use {
     },
     num_traits::FromPrimitive,
     solana_program::{
-        account_info::{next_account_info, AccountInfo},
-        clock::Clock,
-        decode_error::DecodeError,
-        entrypoint::ProgramResult,
-        instruction::Instruction,
-        msg,
-        program::invoke_signed,
-        program_error::{PrintProgramError, ProgramError},
-        program_option::COption,
-        pubkey::Pubkey,
-        sysvar::Sysvar,
-        program_pack::Pack
+        account_info::{next_account_info, AccountInfo}, clock::Clock, decode_error::DecodeError, entrypoint::ProgramResult, instruction::Instruction, msg, program::invoke_signed, program_error::{PrintProgramError, ProgramError}, program_option::COption, program_pack::Pack, pubkey::Pubkey, sysvar::Sysvar
     },
     spl_token_2022::{
         check_spl_token_program_account,
         error::TokenError,
         extension::{
-            mint_close_authority::MintCloseAuthority, transfer_fee::TransferFeeConfig,
+            transfer_fee::TransferFeeConfig,
             BaseStateWithExtensions, StateWithExtensions,
         },
         state::{Account, Mint},
@@ -255,6 +244,8 @@ impl Processor {
         let token_a_info = next_account_info(account_info_iter)?;
         let token_b_info = next_account_info(account_info_iter)?;
         let pool_mint_info = next_account_info(account_info_iter)?;
+        let token_a_mint_info = next_account_info(account_info_iter)?;
+        let token_b_mint_info = next_account_info(account_info_iter)?;
         let fee_account_info = next_account_info(account_info_iter)?;
         let destination_info = next_account_info(account_info_iter)?;
         let pool_token_program_info = next_account_info(account_info_iter)?;
@@ -280,14 +271,27 @@ impl Processor {
                 pool_mint_info.owner,
                 &token_program_id,
             )?;
-            if let Ok(extension) = pool_mint.get_extension::<MintCloseAuthority>() {
-                let close_authority: Option<Pubkey> = extension.close_authority.into();
-                if close_authority.is_some() {
-                    return Err(SwapError::InvalidCloseAuthority.into());
-                }
-            }
+            validate_mint_extensions(&pool_mint, true)?;
             pool_mint.base
         };
+
+        let token_a_mint_data = token_a_mint_info.data.borrow();
+        let token_a_mint_state = Self::unpack_mint_with_extensions(
+            &token_a_mint_data, 
+            token_a_mint_info.owner, 
+            &token_program_id
+        )?;
+        validate_mint_extensions(&token_a_mint_state, false)?;
+
+        let token_b_mint_data = token_b_mint_info.data.borrow();
+        let token_b_mint_state = Self::unpack_mint_with_extensions(
+            &token_b_mint_data, 
+            token_b_mint_info.owner, 
+            &token_program_id
+        )?;
+        validate_mint_extensions(&token_b_mint_state, false)?;
+
+
 
         if *authority_info.key != token_a.owner {
             return Err(SwapError::InvalidOwner.into());
@@ -487,26 +491,6 @@ impl Processor {
             Self::unpack_token_account(swap_destination_info, token_swap.token_program_id())?;
         let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
 
-        // Take transfer fees into account for actual amount transferred in
-        let actual_amount_in = {
-            let source_mint_data = source_token_mint_info.data.borrow();
-            let source_mint = Self::unpack_mint_with_extensions(
-                &source_mint_data,
-                source_token_mint_info.owner,
-                token_swap.token_program_id(),
-            )?;
-
-            if let Ok(transfer_fee_config) = source_mint.get_extension::<TransferFeeConfig>() {
-                amount_in.saturating_sub(
-                    transfer_fee_config
-                        .calculate_epoch_fee(Clock::get()?.epoch, amount_in)
-                        .ok_or(SwapError::FeeCalculationFailure)?,
-                )
-            } else {
-                amount_in
-            }
-        };
-
         // Calculate the trade amounts
         let trade_direction = if *swap_source_info.key == *token_swap.token_a_account() {
             TradeDirection::AtoB
@@ -516,7 +500,7 @@ impl Processor {
         let result = token_swap
             .swap_curve()
             .swap(
-                u128::from(actual_amount_in),
+                u128::from(amount_in),
                 u128::from(source_account.amount),
                 u128::from(dest_account.amount),
                 trade_direction,
@@ -1485,7 +1469,6 @@ mod tests {
         bump_seed: u8,
         authority_key: Pubkey,
         fees: Fees,
-        transfer_fees: SwapTransferFees,
         swap_curve: SwapCurve,
         swap_key: Pubkey,
         swap_account: SolanaAccount,
@@ -1532,6 +1515,7 @@ mod tests {
                 None,
                 None,
                 &transfer_fees.pool_token,
+                true,
             );
             let (pool_token_key, pool_token_account) = mint_token(
                 pool_token_program_id,
@@ -1555,6 +1539,7 @@ mod tests {
                 None,
                 None,
                 &transfer_fees.token_a,
+                false,
             );
             let (token_a_key, token_a_account) = mint_token(
                 token_a_program_id,
@@ -1570,6 +1555,7 @@ mod tests {
                 None,
                 None,
                 &transfer_fees.token_b,
+                false,
             );
             let (token_b_key, token_b_account) = mint_token(
                 token_b_program_id,
@@ -1584,7 +1570,6 @@ mod tests {
                 bump_seed,
                 authority_key,
                 fees,
-                transfer_fees,
                 swap_curve,
                 swap_key,
                 swap_account,
@@ -1618,6 +1603,8 @@ mod tests {
                     &self.token_a_key,
                     &self.token_b_key,
                     &self.pool_mint_key,
+                    &self.token_a_mint_key,
+                    &self.token_b_mint_key,
                     &self.pool_fee_key,
                     &self.pool_token_key,
                     self.fees.clone(),
@@ -1631,6 +1618,8 @@ mod tests {
                     &mut self.token_a_account,
                     &mut self.token_b_account,
                     &mut self.pool_mint_account,
+                    &mut self.token_a_mint_account,
+                    &mut self.token_b_mint_account,
                     &mut self.pool_fee_account,
                     &mut self.pool_token_account,
                     &mut SolanaAccount::default(),
@@ -2318,21 +2307,18 @@ mod tests {
         freeze_authority: Option<&Pubkey>,
         close_authority: Option<&Pubkey>,
         fees: &TransferFee,
+        is_pool_mint: bool,
     ) -> (Pubkey, SolanaAccount) {
         let mint_key = Pubkey::new_unique();
         let space = if *program_id == spl_token_2022::id() {
+            let mut extensions = vec![];
             if close_authority.is_some() {
-                ExtensionType::try_calculate_account_len::<Mint>(&[
-                    ExtensionType::MintCloseAuthority,
-                    ExtensionType::TransferFeeConfig,
-                ])
-                .unwrap()
-            } else {
-                ExtensionType::try_calculate_account_len::<Mint>(&[
-                    ExtensionType::TransferFeeConfig,
-                ])
-                .unwrap()
+                extensions.push(ExtensionType::MintCloseAuthority);
             }
+            if is_pool_mint {
+                extensions.push(ExtensionType::TransferFeeConfig);
+            }
+            ExtensionType::try_calculate_account_len::<Mint>(&extensions).unwrap()
         } else {
             Mint::get_packed_len()
         };
@@ -2349,19 +2335,21 @@ mod tests {
                 )
                 .unwrap();
             }
-            do_process_instruction(
-                initialize_transfer_fee_config(
-                    program_id,
-                    &mint_key,
-                    freeze_authority,
-                    freeze_authority,
-                    fees.transfer_fee_basis_points.into(),
-                    fees.maximum_fee.into(),
+            if is_pool_mint {
+                do_process_instruction(
+                    initialize_transfer_fee_config(
+                        program_id,
+                        &mint_key,
+                        freeze_authority,
+                        freeze_authority,
+                        fees.transfer_fee_basis_points.into(),
+                        fees.maximum_fee.into(),
+                    )
+                    .unwrap(),
+                    vec![&mut mint_account],
                 )
-                .unwrap(),
-                vec![&mut mint_account],
-            )
-            .unwrap();
+                .unwrap();
+            }
         }
         do_process_instruction(
             initialize_mint(program_id, &mint_key, authority_key, freeze_authority, 2).unwrap(),
@@ -2663,6 +2651,7 @@ mod tests {
                 None,
                 None,
                 &TransferFee::default(),
+                true,
             );
             let old_mint = accounts.pool_mint_account;
             accounts.pool_mint_account = pool_mint_account;
@@ -2681,6 +2670,7 @@ mod tests {
                 Some(&user_key),
                 None,
                 &TransferFee::default(),
+                true
             );
             let old_mint = accounts.pool_mint_account;
             accounts.pool_mint_account = pool_mint_account;
@@ -2699,11 +2689,12 @@ mod tests {
                 None,
                 Some(&user_key),
                 &TransferFee::default(),
+                true
             );
             let old_mint = accounts.pool_mint_account;
             accounts.pool_mint_account = pool_mint_account;
             assert_eq!(
-                Err(SwapError::InvalidCloseAuthority.into()),
+                Err(SwapError::UnsupportedTokenExtension.into()),
                 accounts.initialize_swap()
             );
             accounts.pool_mint_account = old_mint;
@@ -2798,6 +2789,7 @@ mod tests {
                 None,
                 None,
                 &TransferFee::default(),
+                true
             );
             accounts.pool_mint_account = pool_mint_account;
 
@@ -3014,6 +3006,8 @@ mod tests {
                         &accounts.token_a_key,
                         &accounts.token_b_key,
                         &accounts.pool_mint_key,
+                        &accounts.token_a_mint_key,
+                        &accounts.token_b_mint_key,
                         &accounts.pool_fee_key,
                         &accounts.pool_token_key,
                         accounts.fees.clone(),
@@ -3027,6 +3021,8 @@ mod tests {
                         &mut accounts.token_a_account,
                         &mut accounts.token_b_account,
                         &mut accounts.pool_mint_account,
+                        &mut accounts.token_a_mint_account,
+                        &mut accounts.token_b_mint_account,
                         &mut accounts.pool_fee_account,
                         &mut accounts.pool_token_account,
                         &mut SolanaAccount::default(),
@@ -3240,6 +3236,8 @@ mod tests {
                         &accounts.token_a_key,
                         &accounts.token_b_key,
                         &accounts.pool_mint_key,
+                        &accounts.token_a_mint_key,
+                        &accounts.token_b_mint_key,
                         &accounts.pool_fee_key,
                         &accounts.pool_token_key,
                         accounts.fees.clone(),
@@ -3253,6 +3251,8 @@ mod tests {
                         &mut accounts.token_a_account,
                         &mut accounts.token_b_account,
                         &mut accounts.pool_mint_account,
+                        &mut accounts.token_a_mint_account,
+                        &mut accounts.token_b_mint_account,
                         &mut accounts.pool_fee_account,
                         &mut accounts.pool_token_account,
                         &mut SolanaAccount::default(),
@@ -3316,6 +3316,8 @@ mod tests {
                         &accounts.token_a_key,
                         &accounts.token_b_key,
                         &accounts.pool_mint_key,
+                        &accounts.token_a_mint_key,
+                        &accounts.token_b_mint_key,
                         &accounts.pool_fee_key,
                         &accounts.pool_token_key,
                         accounts.fees.clone(),
@@ -3329,6 +3331,8 @@ mod tests {
                         &mut accounts.token_a_account,
                         &mut accounts.token_b_account,
                         &mut accounts.pool_mint_account,
+                        &mut accounts.token_a_mint_account,
+                        &mut accounts.token_b_mint_account,
                         &mut accounts.pool_fee_account,
                         &mut accounts.pool_token_account,
                         &mut SolanaAccount::default(),
@@ -3388,6 +3392,8 @@ mod tests {
                     &accounts.token_a_key,
                     &accounts.token_b_key,
                     &accounts.pool_mint_key,
+                    &accounts.token_a_mint_key,
+                    &accounts.token_b_mint_key,
                     &accounts.pool_fee_key,
                     &accounts.pool_token_key,
                     accounts.fees,
@@ -3401,6 +3407,8 @@ mod tests {
                     &mut accounts.token_a_account,
                     &mut accounts.token_b_account,
                     &mut accounts.pool_mint_account,
+                    &mut accounts.token_a_mint_account,
+                    &mut accounts.token_b_mint_account,
                     &mut accounts.pool_fee_account,
                     &mut accounts.pool_token_account,
                     &mut SolanaAccount::default(),
@@ -3927,6 +3935,7 @@ mod tests {
                 None,
                 None,
                 &TransferFee::default(),
+                true
             );
             let old_pool_key = accounts.pool_mint_key;
             let old_pool_account = accounts.pool_mint_account;
@@ -4654,6 +4663,7 @@ mod tests {
                 None,
                 None,
                 &TransferFee::default(),
+                true
             );
             let old_pool_key = accounts.pool_mint_key;
             let old_pool_account = accounts.pool_mint_account;
@@ -5344,6 +5354,7 @@ mod tests {
                 None,
                 None,
                 &TransferFee::default(),
+                true
             );
             let old_pool_key = accounts.pool_mint_key;
             let old_pool_account = accounts.pool_mint_account;
@@ -5966,6 +5977,7 @@ mod tests {
                 None,
                 None,
                 &TransferFee::default(),
+                true
             );
             let old_pool_key = accounts.pool_mint_key;
             let old_pool_account = accounts.pool_mint_account;
@@ -6258,16 +6270,9 @@ mod tests {
             )
             .unwrap();
 
-        // tweak values based on transfer fees assessed
-        let token_a_fee = accounts
-            .transfer_fees
-            .token_a
-            .calculate_fee(a_to_b_amount)
-            .unwrap();
-        let actual_a_to_b_amount = a_to_b_amount - token_a_fee;
         let results = swap_curve
             .swap(
-                actual_a_to_b_amount.into(),
+                a_to_b_amount.into(),
                 token_a_amount.into(),
                 token_b_amount.into(),
                 TradeDirection::AtoB,
@@ -6345,7 +6350,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut results = swap_curve
+        let results = swap_curve
             .swap(
                 b_to_a_amount.into(),
                 token_b_amount.into(),
@@ -6355,13 +6360,6 @@ mod tests {
                 accounts.get_current_timestamp_opt().unwrap()
             )
             .unwrap();
-        // tweak values based on transfer fees assessed
-        let token_a_fee = accounts
-            .transfer_fees
-            .token_a
-            .calculate_fee(results.destination_amount_swapped.try_into().unwrap())
-            .unwrap();
-        results.destination_amount_swapped -= token_a_fee as u128;
 
         let swap_token_a =
             StateWithExtensions::<Account>::unpack(&accounts.token_a_account.data).unwrap();
@@ -6620,6 +6618,8 @@ mod tests {
                 &accounts.token_a_key,
                 &accounts.token_b_key,
                 &accounts.pool_mint_key,
+                &accounts.token_a_mint_key,
+                &accounts.token_b_mint_key,
                 &accounts.pool_fee_key,
                 &accounts.pool_token_key,
                 accounts.fees.clone(),
@@ -6633,6 +6633,8 @@ mod tests {
                 &mut accounts.token_a_account,
                 &mut accounts.token_b_account,
                 &mut accounts.pool_mint_account,
+                &mut accounts.token_a_mint_account,
+                &mut accounts.token_b_mint_account,
                 &mut accounts.pool_fee_account,
                 &mut accounts.pool_token_account,
                 &mut SolanaAccount::default(),
@@ -7075,6 +7077,7 @@ mod tests {
                 None,
                 None,
                 &TransferFee::default(),
+                true
             );
             let old_pool_key = accounts.pool_mint_key;
             let old_pool_account = accounts.pool_mint_account;
@@ -8326,6 +8329,8 @@ mod tests {
                 &accounts.token_a_key,
                 &accounts.token_b_key,
                 &accounts.pool_mint_key,
+                &accounts.token_a_mint_key,
+                &accounts.token_b_mint_key,
                 &accounts.pool_fee_key,
                 &accounts.pool_token_key,
                 accounts.fees.clone(),
@@ -8339,6 +8344,8 @@ mod tests {
                 &mut accounts.token_a_account,
                 &mut accounts.token_b_account,
                 &mut accounts.pool_mint_account,
+                &mut accounts.token_a_mint_account,
+                &mut accounts.token_b_mint_account,
                 &mut accounts.pool_fee_account,
                 &mut accounts.pool_token_account,
                 &mut SolanaAccount::default(),
