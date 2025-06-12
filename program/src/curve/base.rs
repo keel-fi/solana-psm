@@ -85,14 +85,14 @@ impl SwapCurve {
         timestamp: Option<u128>
     ) -> Option<SwapResult> {
         // debit the fee to calculate the amount swapped
-        let trade_fee = fees.trading_fee(source_amount)?;
-        let owner_fee = fees.owner_trading_fee(source_amount)?;
+        let mut trade_fee = fees.trading_fee(source_amount)?;
+        let mut owner_fee = fees.owner_trading_fee(source_amount)?;
 
-        let total_fees = trade_fee.checked_add(owner_fee)?;
+        let mut total_fees = trade_fee.checked_add(owner_fee)?;
         let source_amount_less_fees = source_amount.checked_sub(total_fees)?;
 
         let SwapWithoutFeesResult {
-            source_amount_swapped,
+            source_amount_swapped: amount_used,
             destination_amount_swapped,
         } = self.calculator.swap_without_fees(
             source_amount_less_fees,
@@ -102,7 +102,14 @@ impl SwapCurve {
             timestamp
         )?;
 
-        let source_amount_swapped = source_amount_swapped.checked_add(total_fees)?;
+        if amount_used < source_amount_less_fees {
+            // curve rounded down -> adjust fees
+            trade_fee  = fees.trading_fee(amount_used)?;
+            owner_fee  = fees.owner_trading_fee(amount_used)?;
+            total_fees = trade_fee.checked_add(owner_fee)?;
+        }
+
+        let source_amount_swapped = amount_used.checked_add(total_fees)?;
         Some(SwapResult {
             new_swap_source_amount: swap_source_amount.checked_add(source_amount_swapped)?,
             new_swap_destination_amount: swap_destination_amount
