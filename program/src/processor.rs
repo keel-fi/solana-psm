@@ -536,7 +536,7 @@ impl Processor {
             let destination_mint_data = destination_token_mint_info.data.borrow();
             let destination_mint = Self::unpack_mint_with_extensions(
                 &destination_mint_data,
-                source_token_mint_info.owner,
+                destination_token_mint_info.owner,
                 token_swap.token_program_id(),
             )?;
             let amount_out = to_u64(result.destination_amount_swapped)?;
