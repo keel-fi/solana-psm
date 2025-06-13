@@ -265,6 +265,9 @@ impl CurveCalculator for RedemptionRateCurve {
         })
     }
 
+    /// Convert `pool_tokens` into the proportional amounts of each trading token,
+    /// given current pool reserves and total pool-token supply.
+    /// Rounds according to `round_direction`.
     fn pool_tokens_to_trading_tokens(
         &self,
         pool_tokens: u128,

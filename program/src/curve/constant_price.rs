@@ -101,10 +101,9 @@ impl CurveCalculator for ConstantPriceCurve {
         })
     }
 
-    /// Get the amount of trading tokens for the given amount of pool tokens,
-    /// provided the total trading tokens and supply of pool tokens.
-    /// For the constant price curve, the total value of the pool is weighted
-    /// by the price of token B.
+    /// Convert `pool_tokens` into the proportional amounts of each trading token,
+    /// given current pool reserves and total pool-token supply.
+    /// Rounds according to `round_direction`.
     fn pool_tokens_to_trading_tokens(
         &self,
         pool_tokens: u128,

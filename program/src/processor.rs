@@ -578,18 +578,7 @@ impl Processor {
                 token_swap.token_program_id(),
             )?;
             let amount_out = to_u64(result.destination_amount_swapped)?;
-            let amount_received = if let Ok(transfer_fee_config) =
-                destination_mint.get_extension::<TransferFeeConfig>()
-            {
-                amount_out.saturating_sub(
-                    transfer_fee_config
-                        .calculate_epoch_fee(Clock::get()?.epoch, amount_out)
-                        .ok_or(SwapError::FeeCalculationFailure)?,
-                )
-            } else {
-                amount_out
-            };
-            if amount_received < minimum_amount_out {
+            if amount_out < minimum_amount_out {
                 return Err(SwapError::ExceededSlippage.into());
             }
             (amount_out, destination_mint.base.decimals)
