@@ -20,8 +20,7 @@ use {
         check_spl_token_program_account,
         error::TokenError,
         extension::{
-            transfer_fee::TransferFeeConfig,
-            BaseStateWithExtensions, StateWithExtensions,
+            StateWithExtensions,
         },
         state::{Account, Mint},
     },
@@ -557,17 +556,8 @@ impl Processor {
                 source_token_mint_info.owner,
                 token_swap.token_program_id(),
             )?;
-            let amount =
-                if let Ok(transfer_fee_config) = source_mint.get_extension::<TransferFeeConfig>() {
-                    source_amount_swapped.saturating_add(
-                        transfer_fee_config
-                            .calculate_inverse_epoch_fee(Clock::get()?.epoch, source_amount_swapped)
-                            .ok_or(SwapError::FeeCalculationFailure)?,
-                    )
-                } else {
-                    source_amount_swapped
-                };
-            (amount, source_mint.base.decimals)
+
+            (source_amount_swapped, source_mint.base.decimals)
         };
 
         let (destination_transfer_amount, destination_mint_decimals) = {
