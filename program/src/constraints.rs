@@ -123,13 +123,13 @@ pub fn validate_mint_extensions(
     is_pool_mint: bool,
 ) -> Result<(), ProgramError> {
     let extensions = state.get_extension_types()?;
-    let invalid_entensions = if is_pool_mint {
+    let invalid_extensions = if is_pool_mint {
         INVALID_POOL_MINT_EXTENSIONS
     } else {
         INVALID_TOKEN_A_B_EXTENSIONS
     };
 
-    if extensions.iter().any(|e| invalid_entensions.contains(e)) {
+    if extensions.iter().any(|e| invalid_extensions.contains(e)) {
         return Err(SwapError::UnsupportedTokenExtension.into());
     }
 
