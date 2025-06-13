@@ -116,7 +116,8 @@ const INVALID_TOKEN_A_B_EXTENSIONS: &[ExtensionType] = &[
     ExtensionType::TransferFeeConfig,
 ];
 
-/// todo comment
+/// Ensures the mint doesn’t carry any disallowed SPL-Token 2022 extensions
+/// (different blacklists for pool-mint vs. token-A/B mints).
 pub fn validate_mint_extensions(
     state: &StateWithExtensions<Mint>,
     is_pool_mint: bool,
