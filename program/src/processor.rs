@@ -595,7 +595,7 @@ impl Processor {
             (amount_out, destination_mint.base.decimals)
         };
 
-        let (swap_token_a_amount, swap_token_b_amount) = match trade_direction {
+        let (mut swap_token_a_amount, mut swap_token_b_amount) = match trade_direction {
             TradeDirection::AtoB => (
                 result.new_swap_source_amount,
                 result.new_swap_destination_amount,
@@ -619,6 +619,23 @@ impl Processor {
         )?;
 
         if result.owner_fee > 0 {
+            // Adjust reserves to exclude the owner fee before we mint LP tokens.
+            // The fee was taken from the side that the user swapped *from*.
+            match trade_direction {
+                TradeDirection::AtoB => {
+                    // Fee came out of token-A, so pull it back out of A’s balance.
+                    swap_token_a_amount = swap_token_a_amount
+                        .checked_sub(result.owner_fee)
+                        .ok_or(SwapError::CalculationFailure)?;
+                }
+                TradeDirection::BtoA => {
+                    // Fee came out of token-B, so pull it back out of B’s balance.
+                    swap_token_b_amount = swap_token_b_amount
+                        .checked_sub(result.owner_fee)
+                        .ok_or(SwapError::CalculationFailure)?;
+                }
+            }
+
             let mut pool_token_amount = token_swap
                 .swap_curve()
                 .calculator
@@ -6492,13 +6509,21 @@ mod tests {
             initial_b + to_u64(results.destination_amount_swapped).unwrap()
         );
 
+        // use pre-fee reserves so helper sees the correct denominator
+        let (reserve_a, reserve_b) = if results.owner_fee > 0 {
+            // fee was taken from token-A
+            (token_a_amount - to_u64(results.owner_fee).unwrap(), token_b_amount)
+        } else {
+            (token_a_amount, token_b_amount)
+        };
+
         let first_fee = if results.owner_fee > 0 {
             swap_curve
                 .calculator
                 .withdraw_single_token_type_exact_out(
                     results.owner_fee,
-                    token_a_amount.into(),
-                    token_b_amount.into(),
+                    reserve_a.into(),
+                    reserve_b.into(),
                     initial_supply.into(),
                     TradeDirection::AtoB,
                     RoundDirection::Floor,
@@ -6576,13 +6601,21 @@ mod tests {
                 - to_u64(results.source_amount_swapped).unwrap()
         );
 
+        // same idea, but fee came from token-B this time
+        let (reserve_a2, reserve_b2) = if results.owner_fee > 0 {
+            // fee was taken from token-B
+            (token_a_amount, token_b_amount - to_u64(results.owner_fee).unwrap())
+        } else {
+            (token_a_amount, token_b_amount)
+        };
+
         let second_fee = if results.owner_fee > 0 {
             swap_curve
                 .calculator
                 .withdraw_single_token_type_exact_out(
                     results.owner_fee,
-                    token_a_amount.into(),
-                    token_b_amount.into(),
+                    reserve_a2.into(),
+                    reserve_b2.into(),
                     initial_supply.into(),
                     TradeDirection::BtoA,
                     RoundDirection::Floor,
@@ -6901,11 +6934,23 @@ mod tests {
         let host_fee_account = StateWithExtensions::<Account>::unpack(&pool_account.data).unwrap();
         let owner_fee_account =
             StateWithExtensions::<Account>::unpack(&accounts.pool_fee_account.data).unwrap();
-        let total_fee = owner_fee_account.base.amount * host_fee_denominator
-            / (host_fee_denominator - host_fee_numerator);
+
+
+        let minted_fee_tokens: u128 =
+            u128::from(host_fee_account.base.amount) + u128::from(owner_fee_account.base.amount);
+
+        let expected_host_fee: u128 = fees.host_fee(minted_fee_tokens).unwrap();
+
         assert_eq!(
-            total_fee,
-            host_fee_account.base.amount + owner_fee_account.base.amount
+            host_fee_account.base.amount,
+            expected_host_fee as u64,
+            "host-fee account mismatch"
+        );
+
+        assert_eq!(
+            owner_fee_account.base.amount,
+            (minted_fee_tokens - expected_host_fee) as u64,
+            "owner-fee account mismatch"
         );
     }
 
