@@ -75,7 +75,8 @@ pub async fn get_init_curve_setup(
         context_payer, 
         last_blockhash,
         &TOKEN_PROGRAM_ID,
-        Some(&context_payer.pubkey())
+        Some(&context_payer.pubkey()),
+        None
     ).await;
 
     let token_b_mint = create_mint(
@@ -83,7 +84,8 @@ pub async fn get_init_curve_setup(
         &context_payer, 
         last_blockhash, 
         &TOKEN_PROGRAM_ID,
-        Some(&context_payer.pubkey())
+        Some(&context_payer.pubkey()),
+        None,
     ).await;
 
     let pool_mint = create_mint(
@@ -92,6 +94,7 @@ pub async fn get_init_curve_setup(
         last_blockhash, 
         &TOKEN_PROGRAM_ID,
         Some(&authority),
+        Some(&authority)
     ).await;
 
     let token_a_account = create_token_account(
@@ -258,6 +261,7 @@ async fn create_mint(
     last_blockhash: Hash,
     token_program_id: &Pubkey,
     mint_authority: Option<&Pubkey>,
+    freeze_authority: Option<&Pubkey>
 ) -> Pubkey {
     let keypair = Keypair::new();
     let rent = banks_client.get_rent().await.unwrap();
@@ -274,7 +278,7 @@ async fn create_mint(
         token_program_id, 
         &keypair.pubkey(), 
         mint_authority.unwrap_or(&payer.pubkey()), 
-        None, 
+        freeze_authority, 
         9
     ).unwrap();
 

@@ -116,6 +116,35 @@ impl Processor {
         )
     }
 
+    /// Issue a spl_token `Freeze Account` instruction.
+    pub fn token_freeze_account<'a>(
+        swap: &Pubkey,
+        token_program: AccountInfo<'a>,
+        account_to_freeze: AccountInfo<'a>,
+        mint: AccountInfo<'a>,
+        authority: AccountInfo<'a>,
+        bump_seed: u8,
+    ) -> Result<(), ProgramError> {
+
+        let swap_bytes = swap.to_bytes();
+        let authority_signature_seeds = [&swap_bytes[..32], &[bump_seed]];
+        let signers = &[&authority_signature_seeds[..]];
+
+        let ix = spl_token_2022::instruction::freeze_account(
+            token_program.key, 
+            account_to_freeze.key, 
+            mint.key, 
+            authority.key, 
+            &[]
+        )?;
+
+        invoke_signed_wrapper::<TokenError>(
+            &ix,
+            &[account_to_freeze, mint, authority, token_program],
+            signers,
+        )
+    }
+
     /// Issue a spl_token `MintTo` instruction.
     pub fn token_mint_to<'a>(
         swap: &Pubkey,
@@ -264,6 +293,7 @@ impl Processor {
         let token_b = Self::unpack_token_account(token_b_info, &token_program_id)?;
         let fee_account = Self::unpack_token_account(fee_account_info, &token_program_id)?;
         let destination = Self::unpack_token_account(destination_info, &token_program_id)?;
+        
         let pool_mint = {
             let pool_mint_data = pool_mint_info.data.borrow();
             let pool_mint = Self::unpack_mint_with_extensions(
@@ -290,8 +320,6 @@ impl Processor {
             &token_program_id
         )?;
         validate_mint_extensions(&token_b_mint_state, false)?;
-
-
 
         if *authority_info.key != token_a.owner {
             return Err(SwapError::InvalidOwner.into());
@@ -331,9 +359,6 @@ impl Processor {
         if pool_mint.supply != 0 {
             return Err(SwapError::InvalidSupply.into());
         }
-        if pool_mint.freeze_authority.is_some() {
-            return Err(SwapError::InvalidFreezeAuthority.into());
-        }
         if *pool_mint_info.key != fee_account.mint {
             return Err(SwapError::IncorrectPoolMint.into());
         }
@@ -341,6 +366,10 @@ impl Processor {
             || token_b.mint == *pool_mint_info.key
         {
             return Err(SwapError::IncorrectPoolMint.into());
+        }
+
+        if pool_mint.freeze_authority != COption::Some(*authority_info.key) {
+            return Err(SwapError::InvalidFreezeAuthority.into());
         }
 
         if let Some(swap_constraints) = swap_constraints {
@@ -373,6 +402,15 @@ impl Processor {
             authority_info.clone(),
             bump_seed,
             to_u64(initial_amount)?,
+        )?;
+
+        Self::token_freeze_account(
+            swap_info.key,
+            pool_token_program_info.clone(),
+            destination_info.clone(),
+            pool_mint_info.clone(),
+            authority_info.clone(),
+            bump_seed
         )?;
 
         if swap_curve.curve_type == CurveType::RedemptionRateCurve {
@@ -1642,7 +1680,7 @@ mod tests {
             let (pool_mint_key, mut pool_mint_account) = create_mint(
                 pool_token_program_id,
                 &authority_key,
-                None,
+                Some(&authority_key),
                 None,
                 &transfer_fees.pool_token,
                 true,
@@ -7818,12 +7856,9 @@ mod tests {
             mut token_a_account,
             token_b_key,
             mut token_b_account,
-            _pool_key,
-            _pool_account,
-        ) = accounts.setup_token_accounts(&user_key, &withdrawer_key, 0, 0, 0);
-
-        let pool_key = accounts.pool_token_key;
-        let mut pool_account = accounts.pool_token_account.clone();
+            pool_key,
+            mut pool_account,
+        ) = accounts.setup_token_accounts(&user_key, &withdrawer_key, 0, 0, total_pool as u64);
 
         // WithdrawAllTokenTypes takes all tokens for A and B.
         // The curve's calculation for token B will say to transfer
@@ -7831,7 +7866,7 @@ mod tests {
         // moved.
         accounts
             .withdraw_all_token_types(
-                &user_key,
+                &withdrawer_key,
                 &pool_key,
                 &mut pool_account,
                 &token_a_key,
@@ -7845,12 +7880,13 @@ mod tests {
             .unwrap();
 
         let token_a = StateWithExtensions::<Account>::unpack(&token_a_account.data).unwrap();
-        assert_eq!(token_a.base.amount, token_a_amount);
+        // half of each token stays locked because half the LP supply is frozen
+        assert_eq!(token_a.base.amount, token_a_amount / 2);
         let token_b = StateWithExtensions::<Account>::unpack(&token_b_account.data).unwrap();
         assert_eq!(token_b.base.amount, token_b_amount);
         let swap_token_a =
             StateWithExtensions::<Account>::unpack(&accounts.token_a_account.data).unwrap();
-        assert_eq!(swap_token_a.base.amount, 0);
+        assert_eq!(swap_token_a.base.amount, token_a_amount / 2);
         let swap_token_b =
             StateWithExtensions::<Account>::unpack(&accounts.token_b_account.data).unwrap();
         assert_eq!(swap_token_b.base.amount, 0);
@@ -7918,19 +7954,17 @@ mod tests {
             mut token_a_account,
             token_b_key,
             mut token_b_account,
-            _pool_key,
-            _pool_account,
-        ) = accounts.setup_token_accounts(&user_key, &withdrawer_key, 0, 0, 0);
+            pool_key,
+            mut pool_account,
+        ) = accounts.setup_token_accounts(&user_key, &withdrawer_key, 0, 0, total_pool as u64);
 
-        let pool_key = accounts.pool_token_key;
-        let mut pool_account = accounts.pool_token_account.clone();
 
         // We try to take out *all* pool tokens, but we demand one more token-B
         // than the pool actually has. The program must throw ExceededSlippage.
         assert_eq!(
             Err(SwapError::ExceededSlippage.into()),
             accounts.withdraw_all_token_types(
-                &user_key,
+                &withdrawer_key,
                 &pool_key,
                 &mut pool_account,
                 &token_a_key,
@@ -7947,7 +7981,7 @@ mod tests {
         // withdrawn and the pool is emptied.
         accounts
             .withdraw_all_token_types(
-                &user_key,
+                &withdrawer_key,
                 &pool_key,
                 &mut pool_account,
                 &token_a_key,
@@ -7961,13 +7995,24 @@ mod tests {
             .unwrap();
 
         let token_a = StateWithExtensions::<Account>::unpack(&token_a_account.data).unwrap();
-        assert_eq!(token_a.base.amount, swap_token_a_amount);
+        // Before the freeze fix we expected the full pool balance, but half the LP supply
+        // (1 B out of 2 B) is permanently frozen as minimum liquidity, so the user
+        // only owns—and therefore receives—half of each reserve.
+        assert_eq!(token_a.base.amount, swap_token_a_amount / 2);
+        
         let token_b = StateWithExtensions::<Account>::unpack(&token_b_account.data).unwrap();
-        assert_eq!(token_b.base.amount, swap_token_b_amount);
+        // Same reasoning for token-B: only half is claimable because half the LP
+        // tokens are locked in the frozen destination account.
+        assert_eq!(token_b.base.amount, swap_token_b_amount / 2);
+        
         let swap_token_a = StateWithExtensions::<Account>::unpack(&accounts.token_a_account.data).unwrap();
-        assert_eq!(swap_token_a.base.amount, 0);
+        // the other 50 % of token-A remains in the pool vault,  
+        // backing the permanently frozen LP tokens  
+        assert_eq!(swap_token_a.base.amount, swap_token_a_amount / 2);
+        
         let swap_token_b = StateWithExtensions::<Account>::unpack(&accounts.token_b_account.data).unwrap();
-        assert_eq!(swap_token_b.base.amount, 0);
+        // same logic for token-B remaining in the pool vault  
+        assert_eq!(swap_token_b.base.amount, swap_token_b_amount / 2);
 
         // After a full withdrawal the LP-token mint has zero supply.
         // Any deposit creates 0 LP tokens, so we expect ZeroTradingTokens.

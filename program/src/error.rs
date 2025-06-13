@@ -82,7 +82,7 @@ pub enum SwapError {
     #[error("Token account has a close authority")]
     InvalidCloseAuthority,
     /// The pool token mint has a freeze authority.
-    #[error("Pool token mint has a freeze authority")]
+    #[error("Pool-mint freeze authority must be the swap PDA")]
     InvalidFreezeAuthority,
     /// The pool fee token account is incorrect
     #[error("Pool fee token account incorrect")]
@@ -199,7 +199,7 @@ impl PrintProgramError for SwapError {
             }
             SwapError::InvalidCloseAuthority => msg!("Error: Token account has a close authority"),
             SwapError::InvalidFreezeAuthority => {
-                msg!("Error: Pool token mint has a freeze authority")
+                msg!("Error: Pool mint freeze authority must be the swap PDA")
             }
             SwapError::IncorrectFeeAccount => msg!("Error: Pool fee token account incorrect"),
             SwapError::ZeroTradingTokens => {
