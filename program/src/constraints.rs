@@ -105,31 +105,35 @@ pub const SWAP_CONSTRAINTS: Option<SwapConstraints> = {
     }
 };
 
-const INVALID_POOL_MINT_EXTENSIONS: &[ExtensionType] = &[
-    ExtensionType::NonTransferable,
-    ExtensionType::PermanentDelegate,
-    ExtensionType::MintCloseAuthority,
+const VALID_POOL_MINT_EXTENSIONS: &[ExtensionType] = &[
+    ExtensionType::ConfidentialTransferMint,
+    ExtensionType::MetadataPointer,
+    ExtensionType::TokenMetadata,
 ];
 
-const INVALID_TOKEN_A_B_EXTENSIONS: &[ExtensionType] = &[
-    ExtensionType::PermanentDelegate,
-    ExtensionType::TransferFeeConfig,
+const VALID_TOKEN_A_B_EXTENSIONS: &[ExtensionType] = &[
+    ExtensionType::ConfidentialTransferMint,
+    ExtensionType::MintCloseAuthority,
+    ExtensionType::MetadataPointer,
+    ExtensionType::TokenMetadata,
 ];
 
 /// Ensures the mint doesn’t carry any disallowed SPL-Token 2022 extensions
-/// (different blacklists for pool-mint vs. token-A/B mints).
+/// (different whitelists for pool-mint vs. token-A/B mints).
 pub fn validate_mint_extensions(
     state: &StateWithExtensions<Mint>,
     is_pool_mint: bool,
 ) -> Result<(), ProgramError> {
+
     let extensions = state.get_extension_types()?;
-    let invalid_extensions = if is_pool_mint {
-        INVALID_POOL_MINT_EXTENSIONS
+
+    let valid_extensions = if is_pool_mint {
+        VALID_POOL_MINT_EXTENSIONS
     } else {
-        INVALID_TOKEN_A_B_EXTENSIONS
+        VALID_TOKEN_A_B_EXTENSIONS
     };
 
-    if extensions.iter().any(|e| invalid_extensions.contains(e)) {
+    if extensions.iter().any(|e| !valid_extensions.contains(e)) {
         return Err(SwapError::UnsupportedTokenExtension.into());
     }
 
