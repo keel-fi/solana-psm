@@ -1536,7 +1536,7 @@ mod tests {
         spl_token_2022::{
             error::TokenError,
             extension::{
-                transfer_fee::{instruction::initialize_transfer_fee_config, TransferFee},
+                transfer_fee::TransferFee,
                 ExtensionType,
             },
             instruction::{
@@ -2470,18 +2470,19 @@ mod tests {
         authority_key: &Pubkey,
         freeze_authority: Option<&Pubkey>,
         close_authority: Option<&Pubkey>,
-        fees: &TransferFee,
+        _fees: &TransferFee,
         is_pool_mint: bool,
     ) -> (Pubkey, SolanaAccount) {
         let mint_key = Pubkey::new_unique();
         let space = if *program_id == spl_token_2022::id() {
             let mut extensions = vec![];
-            if close_authority.is_some() {
+            if close_authority.is_some() && !is_pool_mint {
                 extensions.push(ExtensionType::MintCloseAuthority);
             }
-            if is_pool_mint {
-                extensions.push(ExtensionType::TransferFeeConfig);
-            }
+            // This Token Extension is no longer allowed for pool mint
+            // if is_pool_mint {
+            //     extensions.push(ExtensionType::TransferFeeConfig);
+            // }
             ExtensionType::try_calculate_account_len::<Mint>(&extensions).unwrap()
         } else {
             Mint::get_packed_len()
@@ -2491,7 +2492,7 @@ mod tests {
         let mut rent_sysvar_account = create_account_for_test(&Rent::free());
 
         if *program_id == spl_token_2022::id() {
-            if close_authority.is_some() {
+            if close_authority.is_some() && !is_pool_mint {
                 do_process_instruction(
                     initialize_mint_close_authority(program_id, &mint_key, close_authority)
                         .unwrap(),
@@ -2499,21 +2500,22 @@ mod tests {
                 )
                 .unwrap();
             }
-            if is_pool_mint {
-                do_process_instruction(
-                    initialize_transfer_fee_config(
-                        program_id,
-                        &mint_key,
-                        freeze_authority,
-                        freeze_authority,
-                        fees.transfer_fee_basis_points.into(),
-                        fees.maximum_fee.into(),
-                    )
-                    .unwrap(),
-                    vec![&mut mint_account],
-                )
-                .unwrap();
-            }
+            // No longer valid since TransferFeeConfig is not allowed for pool mint
+            // if is_pool_mint {
+            //     do_process_instruction(
+            //         initialize_transfer_fee_config(
+            //             program_id,
+            //             &mint_key,
+            //             freeze_authority,
+            //             freeze_authority,
+            //             fees.transfer_fee_basis_points.into(),
+            //             fees.maximum_fee.into(),
+            //         )
+            //         .unwrap(),
+            //         vec![&mut mint_account],
+            //     )
+            //     .unwrap();
+            // }
         }
         do_process_instruction(
             initialize_mint(program_id, &mint_key, authority_key, freeze_authority, 2).unwrap(),
@@ -2858,7 +2860,7 @@ mod tests {
             let old_mint = accounts.pool_mint_account;
             accounts.pool_mint_account = pool_mint_account;
             assert_eq!(
-                Err(SwapError::UnsupportedTokenExtension.into()),
+                Err(SwapError::InvalidFreezeAuthority.into()),
                 accounts.initialize_swap()
             );
             accounts.pool_mint_account = old_mint;
