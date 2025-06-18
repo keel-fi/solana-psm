@@ -102,10 +102,15 @@ impl SwapCurve {
             timestamp
         )?;
 
+        // Recalculate fees if curve couldn't use the full source_amount_less_fees
         if amount_used < source_amount_less_fees {
-            // curve rounded down -> adjust fees
-            trade_fee  = fees.trading_fee(amount_used)?;
-            owner_fee  = fees.owner_trading_fee(amount_used)?;
+            // Calculate how much less was used than expected
+            let difference = source_amount_less_fees - amount_used;
+            // Find what the original amount should have been
+            let modified_source_amount = source_amount.checked_sub(difference)?;
+            // Recalculate fees based on the adjusted amount
+            trade_fee = fees.trading_fee(modified_source_amount)?;
+            owner_fee = fees.owner_trading_fee(modified_source_amount)?;
             total_fees = trade_fee.checked_add(owner_fee)?;
         }
 

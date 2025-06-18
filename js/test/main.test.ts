@@ -168,11 +168,19 @@ export async function createTokenSwap(
     connection,
     payer,
     authority,
-    authority,
+    null,
     2,
     Keypair.generate(),
     undefined,
     TOKEN_PROGRAM_ID,
+  );
+
+  const [tokenAccountPoolOwner] = await PublicKey.findProgramAddress(
+    [
+      Buffer.from("init_destination"),
+      tokenSwapAccount.publicKey.toBuffer()
+    ],
+    NOVA_PSM_PROGRAM_ID
   );
 
   console.log('creating pool account');
@@ -180,7 +188,7 @@ export async function createTokenSwap(
     connection,
     payer,
     tokenPool,
-    owner.publicKey,
+    tokenAccountPoolOwner,
     Keypair.generate(),
   );
   const ownerKey = SWAP_PROGRAM_OWNER_FEE_ADDRESS || owner.publicKey.toString();

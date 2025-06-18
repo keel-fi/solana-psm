@@ -298,6 +298,7 @@ impl Processor {
             return Err(SwapError::InvalidOwner.into());
         }
 
+        // Owner of destination account (initial lp supply)
         let (destination_owner_pda, _) = Pubkey::find_program_address(
             &[
                 b"init_destination", 
@@ -306,6 +307,7 @@ impl Processor {
             program_id
         );
 
+        // Reject if destination is not owned by PDA
         if destination_owner_pda != destination.owner {
             return Err(SwapError::InvalidOutputOwner.into());
         }
