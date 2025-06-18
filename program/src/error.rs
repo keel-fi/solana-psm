@@ -82,7 +82,7 @@ pub enum SwapError {
     #[error("Token account has a close authority")]
     InvalidCloseAuthority,
     /// The pool token mint has a freeze authority.
-    #[error("Pool-mint freeze authority must be the swap PDA")]
+    #[error("Pool mint can't have a freeze authority")]
     InvalidFreezeAuthority,
     /// The pool fee token account is incorrect
     #[error("Pool fee token account incorrect")]
@@ -119,10 +119,11 @@ pub enum SwapError {
     /// The pool fee account is invalid.
     #[error("The pool fee account is invalid")]
     InvalidFeeAccount,
-
     /// The timestamp was not provided.
     #[error("The timestamp is missing")]
     MissingTimestamp,
+
+    // 30.
     /// Invalid Rho.
     #[error("Invalid Rho")]
     InvalidRho,
@@ -138,6 +139,8 @@ pub enum SwapError {
     /// Signer does not have valid permission account for curve updates.
     #[error("Invalid curve update permission")]
     InvalidUpdatePermission,
+
+    // 35.
     /// Invalid Ray.
     #[error("Invalid ray scaling factor")]
     InvalidRay,
@@ -199,7 +202,7 @@ impl PrintProgramError for SwapError {
             }
             SwapError::InvalidCloseAuthority => msg!("Error: Token account has a close authority"),
             SwapError::InvalidFreezeAuthority => {
-                msg!("Error: Pool mint freeze authority must be the swap PDA")
+                msg!("Error: Pool mint can't have a freeze authority")
             }
             SwapError::IncorrectFeeAccount => msg!("Error: Pool fee token account incorrect"),
             SwapError::ZeroTradingTokens => {
