@@ -94,7 +94,7 @@ pub async fn get_init_curve_setup(
         last_blockhash, 
         &TOKEN_PROGRAM_ID,
         Some(&authority),
-        Some(&authority)
+        None
     ).await;
 
     let token_a_account = create_token_account(
@@ -141,12 +141,20 @@ pub async fn get_init_curve_setup(
         &fee_and_destination_owner
     ).await;
 
+    let (destination_owner_pda, _) = Pubkey::find_program_address(
+        &[
+            b"init_destination", 
+            &swap_info.to_bytes()
+        ],
+        &PROGRAM_ID
+    );
+
     let destination_account = create_token_account(
         &mut banks_client, 
         last_blockhash, 
         context_payer, 
         &pool_mint, 
-        &fee_and_destination_owner
+        &destination_owner_pda
     ).await;
     (swap_info, authority, token_a_mint, token_b_mint, pool_mint, token_a_account, token_b_account, fee_account, destination_account)
 }
