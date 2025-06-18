@@ -2807,7 +2807,7 @@ mod tests {
         }
 
         // pool mint token has close authority, only available in token-2022
-        // After new constraints implemenbtation, Close authority throws error 
+        // After new constraints implementation, Close authority throws error 
         // for pool mint: UnsupportedTokenExtension
         if pool_token_program_id == spl_token_2022::id() {
             let (_pool_mint_key, pool_mint_account) = create_mint(
