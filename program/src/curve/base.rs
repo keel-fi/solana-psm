@@ -60,6 +60,15 @@ pub struct SwapResult {
     pub owner_fee: u128,
 }
 
+/// Encodes `amount` and `owner_fee` from
+/// `deposit_single_token_type` and `withdraw_single_token_type_exact_out`
+pub struct SingleTokenTypeResult {
+    /// Amount of pool tokens
+    pub amount: u128,
+    /// Amount of source tokens going to owner
+    pub owner_fee: u128
+}
+
 /// Concrete struct to wrap around the trait object which performs calculation.
 #[repr(C)]
 #[derive(Debug)]
@@ -136,9 +145,12 @@ impl SwapCurve {
         trade_direction: TradeDirection,
         fees: &Fees,
         timestamp: Option<u128>,
-    ) -> Option<u128> {
+    ) -> Option<SingleTokenTypeResult> {
         if source_amount == 0 {
-            return Some(0);
+            return Some(SingleTokenTypeResult { 
+                amount: 0, 
+                owner_fee: 0 
+            });
         }
         // Get the trading fee incurred if *half* the source amount is swapped
         // for the other side. Reference at:
@@ -148,14 +160,19 @@ impl SwapCurve {
         let owner_fee = fees.owner_trading_fee(half_source_amount)?;
         let total_fees = trade_fee.checked_add(owner_fee)?;
         let source_amount = source_amount.checked_sub(total_fees)?;
-        self.calculator.deposit_single_token_type(
+        let amount = self.calculator.deposit_single_token_type(
             source_amount,
             swap_token_a_amount,
             swap_token_b_amount,
             pool_supply,
             trade_direction,
             timestamp
-        )
+        )?;
+
+        Some(SingleTokenTypeResult { 
+            amount, 
+            owner_fee 
+        })
     }
 
     /// Get the amount of pool tokens for the withdrawn amount of token A or B
@@ -168,28 +185,41 @@ impl SwapCurve {
         trade_direction: TradeDirection,
         fees: &Fees,
         timestamp: Option<u128>,
-    ) -> Option<u128> {
+    ) -> Option<SingleTokenTypeResult> {
         if source_amount == 0 {
-            return Some(0);
+            return Some(SingleTokenTypeResult {
+                amount: 0,
+                owner_fee: 0
+            });
         }
         // Since we want to get the amount required to get the exact amount out,
         // we need the inverse trading fee incurred if *half* the source amount
         // is swapped for the other side. Reference at:
         // https://github.com/balancer-labs/balancer-core/blob/f4ed5d65362a8d6cec21662fb6eae233b0babc1f/contracts/BMath.sol#L117
         let half_source_amount = source_amount.checked_add(1)?.checked_div(2)?; // round up
+        
+        let owner_fee = fees.owner_trading_fee(half_source_amount)?;
+
         let pre_fee_source_amount = fees.pre_trading_fee_amount(half_source_amount)?;
-        let source_amount = source_amount
+
+        let adjusted_source_amount = source_amount
             .checked_sub(half_source_amount)?
             .checked_add(pre_fee_source_amount)?;
-        self.calculator.withdraw_single_token_type_exact_out(
-            source_amount,
+        
+        let amount = self.calculator.withdraw_single_token_type_exact_out(
+            adjusted_source_amount,
             swap_token_a_amount,
             swap_token_b_amount,
             pool_supply,
             trade_direction,
             RoundDirection::Ceiling,
             timestamp
-        )
+        )?;
+
+        Some(SingleTokenTypeResult {
+            amount,
+            owner_fee
+        })
     }
 }
 
@@ -468,7 +498,8 @@ mod test {
                 &fees,
                 None
             )
-            .unwrap();
+            .unwrap()
+            .amount;
         let withdraw_pool_tokens = swap_curve
             .withdraw_single_token_type_exact_out(
                 results.destination_amount_swapped,
@@ -479,7 +510,8 @@ mod test {
                 &fees,
                 None
             )
-            .unwrap();
+            .unwrap()
+            .amount;
         (withdraw_pool_tokens, deposit_pool_tokens)
     }
 
