@@ -4,6 +4,8 @@
 
 #[cfg(feature = "production")]
 use std::option_env;
+use spl_token_2022::{extension::{BaseStateWithExtensions, ExtensionType, StateWithExtensions}, state::Mint};
+
 use {
     crate::{
         curve::{
@@ -102,6 +104,41 @@ pub const SWAP_CONSTRAINTS: Option<SwapConstraints> = {
         None
     }
 };
+
+const VALID_POOL_MINT_EXTENSIONS: &[ExtensionType] = &[
+    ExtensionType::ConfidentialTransferMint,
+    ExtensionType::MetadataPointer,
+    ExtensionType::TokenMetadata,
+];
+
+const VALID_TOKEN_A_B_EXTENSIONS: &[ExtensionType] = &[
+    ExtensionType::ConfidentialTransferMint,
+    ExtensionType::MintCloseAuthority,
+    ExtensionType::MetadataPointer,
+    ExtensionType::TokenMetadata,
+];
+
+/// Ensures the mint doesn’t carry any disallowed SPL-Token 2022 extensions
+/// (different whitelists for pool-mint vs. token-A/B mints).
+pub fn validate_mint_extensions(
+    state: &StateWithExtensions<Mint>,
+    is_pool_mint: bool,
+) -> Result<(), ProgramError> {
+
+    let extensions = state.get_extension_types()?;
+
+    let valid_extensions = if is_pool_mint {
+        VALID_POOL_MINT_EXTENSIONS
+    } else {
+        VALID_TOKEN_A_B_EXTENSIONS
+    };
+
+    if extensions.iter().any(|e| !valid_extensions.contains(e)) {
+        return Err(SwapError::UnsupportedTokenExtension.into());
+    }
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

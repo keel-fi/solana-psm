@@ -265,6 +265,9 @@ impl CurveCalculator for RedemptionRateCurve {
         })
     }
 
+    /// Convert `pool_tokens` into the proportional amounts of each trading token,
+    /// given current pool reserves and total pool-token supply.
+    /// Rounds according to `round_direction`.
     fn pool_tokens_to_trading_tokens(
         &self,
         pool_tokens: u128,
@@ -272,52 +275,28 @@ impl CurveCalculator for RedemptionRateCurve {
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
         round_direction: super::calculator::RoundDirection,
-        timestamp: Option<u128>
     ) -> Option<super::calculator::TradingTokenResult> {
-
-        let token_b_price = self.get_conversion_rate(timestamp?)?;
-        let ray = U256::from(self.ray);
-
         let pool_tokens = U256::from(pool_tokens);
         let pool_token_supply = U256::from(pool_token_supply);
-
-        let total_value = U256::from(self
-            .normalized_value(swap_token_a_amount, swap_token_b_amount, timestamp)?
-            .to_imprecise()?);
+        let swap_token_a_amount = U256::from(swap_token_a_amount);
+        let swap_token_b_amount = U256::from(swap_token_b_amount);
 
         let (token_a_amount, token_b_amount) = match round_direction {
-            RoundDirection::Floor => {
-
-                let token_a_amount = pool_tokens
-                    .checked_mul(total_value)?
-                    .checked_div(pool_token_supply)?
-                    .min(U256::from(swap_token_a_amount));
-
-                let token_b_amount = pool_tokens
-                    .checked_mul(total_value)?
-                    .checked_mul(ray)?
-                    .checked_div(token_b_price)?
-                    .checked_div(pool_token_supply)?
-                    .min(U256::from(swap_token_b_amount)); 
-
-                (token_a_amount, token_b_amount)
-            }
+            RoundDirection::Floor => (
+                pool_tokens.checked_mul(swap_token_a_amount)?
+                    .checked_div(pool_token_supply)?,
+                pool_tokens.checked_mul(swap_token_b_amount)?
+                    .checked_div(pool_token_supply)?,
+            ),
             RoundDirection::Ceiling => {
-                let (token_a_amount, _) = pool_tokens
-                    .checked_mul(total_value)?
+                let (a, _) = pool_tokens.checked_mul(swap_token_a_amount)?
                     .checked_ceil_div(pool_token_supply)?;
-
-                let (pool_value_as_token_b, _) = pool_tokens
-                    .checked_mul(total_value)?
-                    .checked_mul(ray)?
-                    .checked_ceil_div(token_b_price)?;
-
-                let (token_b_amount, _) =
-                    pool_value_as_token_b.checked_ceil_div(pool_token_supply)?;
-
-                (token_a_amount, token_b_amount)
+                let (b, _) = pool_tokens.checked_mul(swap_token_b_amount)?
+                    .checked_ceil_div(pool_token_supply)?;
+                (a, b)
             }
         };
+
         Some(TradingTokenResult {
             token_a_amount: token_a_amount.as_u128(),
             token_b_amount: token_b_amount.as_u128(),
@@ -375,6 +354,12 @@ impl CurveCalculator for RedemptionRateCurve {
     }
 
     fn validate(&self, timestamp: Option<u128>) -> Result<(), SwapError> {
+        const CANONICAL_RAY: u128 = 1_000_000_000_000_000_000_000_000_000;
+
+        if self.ray != CANONICAL_RAY {
+            return Err(SwapError::InvalidRay);
+        }
+
         let timestamp = timestamp
             .ok_or(SwapError::MissingTimestamp)?;
 
@@ -1455,7 +1440,6 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Floor,
-                    Some(0)
                 )
                 .unwrap();
             prop_assume!(withdraw_result.token_a_amount <= swap_token_a_amount);
@@ -1469,7 +1453,7 @@ mod tests {
                 swap_token_b_amount,
                 TradeDirection::AtoB,
                 // TODO see why this needs to be so high
-                CONVERSION_BASIS_POINTS_GUARANTEE * 100,
+                CONVERSION_BASIS_POINTS_GUARANTEE,
                 Some(0)
             );
             check_withdraw_token_conversion(
@@ -1480,7 +1464,7 @@ mod tests {
                 swap_token_b_amount,
                 TradeDirection::BtoA,
                 // TODO see why this needs to be so high
-                CONVERSION_BASIS_POINTS_GUARANTEE * 100,
+                CONVERSION_BASIS_POINTS_GUARANTEE,
                 Some(0)
             );
         }
@@ -1554,7 +1538,6 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Ceiling,
-                    Some(0)
                 )
                 .unwrap();
             let new_swap_token_a_amount = swap_token_a_amount + deposit_result.token_a_amount;
@@ -1619,7 +1602,6 @@ mod tests {
                     swap_token_a_amount,
                     swap_token_b_amount,
                     RoundDirection::Floor,
-                    Some(0)
                 )
                 .unwrap();
             prop_assume!(withdraw_result.token_a_amount <= swap_token_a_amount);
