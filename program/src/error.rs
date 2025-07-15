@@ -82,7 +82,7 @@ pub enum SwapError {
     #[error("Token account has a close authority")]
     InvalidCloseAuthority,
     /// The pool token mint has a freeze authority.
-    #[error("Pool token mint has a freeze authority")]
+    #[error("Pool mint can't have a freeze authority")]
     InvalidFreezeAuthority,
     /// The pool fee token account is incorrect
     #[error("Pool fee token account incorrect")]
@@ -119,10 +119,11 @@ pub enum SwapError {
     /// The pool fee account is invalid.
     #[error("The pool fee account is invalid")]
     InvalidFeeAccount,
-
     /// The timestamp was not provided.
     #[error("The timestamp is missing")]
     MissingTimestamp,
+
+    // 30.
     /// Invalid Rho.
     #[error("Invalid Rho")]
     InvalidRho,
@@ -138,6 +139,14 @@ pub enum SwapError {
     /// Signer does not have valid permission account for curve updates.
     #[error("Invalid curve update permission")]
     InvalidUpdatePermission,
+
+    // 35.
+    /// Invalid Ray.
+    #[error("Invalid ray scaling factor")]
+    InvalidRay,
+    /// Unsupported token extension.
+    #[error("Unsupported token extension.")]
+    UnsupportedTokenExtension
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {
@@ -193,7 +202,7 @@ impl PrintProgramError for SwapError {
             }
             SwapError::InvalidCloseAuthority => msg!("Error: Token account has a close authority"),
             SwapError::InvalidFreezeAuthority => {
-                msg!("Error: Pool token mint has a freeze authority")
+                msg!("Error: Pool mint can't have a freeze authority")
             }
             SwapError::IncorrectFeeAccount => msg!("Error: Pool fee token account incorrect"),
             SwapError::ZeroTradingTokens => {
@@ -238,6 +247,12 @@ impl PrintProgramError for SwapError {
             },
             SwapError::InvalidUpdatePermission => {
                 msg!("Error: Invalid update permission")
+            },
+            SwapError::InvalidRay => {
+                msg!("Error: Invalid Ray")
+            },
+            SwapError::UnsupportedTokenExtension => {
+                msg!("Error: Unsupported token extension")
             }
         }
     }

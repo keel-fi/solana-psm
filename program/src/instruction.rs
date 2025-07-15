@@ -141,18 +141,20 @@ pub struct UpdatePermission {
 pub enum SwapInstruction {
     ///   Initializes a new swap
     ///
-    ///   0. `[writable, signer]` New Token-swap to create.
+    ///   0. `[writable]` New Token-swap to create.
     ///   1. `[]` swap authority derived from
     ///      `create_program_address(&[Token-swap account])`
     ///   2. `[]` token_a Account. Must be non zero, owned by swap authority.
     ///   3. `[]` token_b Account. Must be non zero, owned by swap authority.
     ///   4. `[writable]` Pool Token Mint. Must be empty, owned by swap
     ///      authority.
-    ///   5. `[]` Pool Token Account to deposit trading and withdraw fees. Must
+    ///   5. `[]` Token A Mint.
+    ///   6. `[]` Token B Mint.
+    ///   7. `[]` Pool Token Account to deposit trading and withdraw fees. Must
     ///      be empty, not owned by swap authority
-    ///   6. `[writable]` Pool Token Account to deposit the initial pool token
+    ///   8. `[writable]` Pool Token Account to deposit the initial pool token
     ///      supply. Must be empty, not owned by swap authority.
-    ///   7. `[]` Pool Token program id
+    ///   9. `[]` Pool Token program id
     Initialize(Initialize),
 
     ///   Swap the tokens in the pool.
@@ -239,6 +241,15 @@ pub enum SwapInstruction {
     ///   8. `[]` Token (A|B) SOURCE mint
     ///   9. `[]` Token (A|B) SOURCE program id
     ///   10. `[]` Pool Token program id
+    ///   11. `[writable]` Pool fee account *(optional)*  
+    ///   12. `[writable]` Host-fee account *(optional)*  
+    ///
+    ///   If accounts 11–12 are supplied, the owner-fee portion of the deposit is
+    ///   converted to pool-tokens and minted:
+    ///   * A share to the host-fee account (if present and non-zero)  
+    ///   * The remainder to the pool-fee account.  
+    ///   If they are omitted, the owner-fee remains in the pool, preserving
+    ///   pre-upgrade behaviour.
     DepositSingleTokenTypeExactAmountIn(DepositSingleTokenTypeExactAmountIn),
 
     ///   Withdraw one token type from the pool at the current ratio given the
@@ -257,6 +268,7 @@ pub enum SwapInstruction {
     ///   9. `[]` Token (A|B) DESTINATION mint
     ///   10. `[]` Pool Token program id
     ///   11. `[]` Token (A|B) DESTINATION program id
+    ///   12. `[writable]` Host-fee account *(optional)*
     WithdrawSingleTokenTypeExactAmountOut(WithdrawSingleTokenTypeExactAmountOut),
 
     /// Updates rho, chi and ssr in RedemptionRateCurve
@@ -542,6 +554,8 @@ pub fn initialize(
     token_a_pubkey: &Pubkey,
     token_b_pubkey: &Pubkey,
     pool_pubkey: &Pubkey,
+    token_a_mint_pubkey: &Pubkey,
+    token_b_mint_pubkey: &Pubkey,
     fee_pubkey: &Pubkey,
     destination_pubkey: &Pubkey,
     fees: Fees,
@@ -558,6 +572,8 @@ pub fn initialize(
         AccountMeta::new_readonly(*token_a_pubkey, false),
         AccountMeta::new_readonly(*token_b_pubkey, false),
         AccountMeta::new(*pool_pubkey, false),
+        AccountMeta::new_readonly(*token_a_mint_pubkey, false),
+        AccountMeta::new_readonly(*token_b_mint_pubkey, false),
         AccountMeta::new_readonly(*fee_pubkey, false),
         AccountMeta::new(*destination_pubkey, false),
         AccountMeta::new_readonly(*token_program_id, false),

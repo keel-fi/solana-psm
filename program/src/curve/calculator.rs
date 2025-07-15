@@ -112,7 +112,6 @@ pub trait CurveCalculator: Debug + DynPack {
         swap_token_a_amount: u128,
         swap_token_b_amount: u128,
         round_direction: RoundDirection,
-        timestamp: Option<u128>
     ) -> Option<TradingTokenResult>;
 
     /// Get the amount of pool tokens for the deposited amount of token A or B.
@@ -329,7 +328,6 @@ pub mod test {
                 swap_token_a_amount,
                 swap_token_b_amount,
                 RoundDirection::Floor,
-                timestamp
             )
             .unwrap();
 
@@ -474,7 +472,6 @@ pub mod test {
                 swap_token_a_amount,
                 swap_token_b_amount,
                 RoundDirection::Ceiling,
-                None
             )
             .unwrap();
         let new_swap_token_a_amount = swap_token_a_amount + deposit_result.token_a_amount;
@@ -526,7 +523,6 @@ pub mod test {
                 swap_token_a_amount,
                 swap_token_b_amount,
                 RoundDirection::Floor,
-                None
             )
             .unwrap();
         let new_swap_token_a_amount = swap_token_a_amount - withdraw_result.token_a_amount;
