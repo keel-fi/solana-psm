@@ -6230,12 +6230,18 @@ mod tests {
                 )
                 .unwrap()
                 .amount;
+
             let withdraw_fee = accounts.fees.owner_withdraw_fee(pool_token_amount).unwrap();
 
             let half_dest = (u128::from(destination_a_amount) + 1) / 2;
+            
+            let pre_fee_source_amount = accounts.fees
+                .pre_trading_fee_amount(half_dest)
+                .unwrap();
+
             let owner_fee_source = accounts
                 .fees
-                .owner_trading_fee(half_dest)
+                .owner_trading_fee(pre_fee_source_amount)
                 .unwrap();
 
             let owner_fee_pool = accounts
