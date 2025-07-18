@@ -198,9 +198,9 @@ impl SwapCurve {
         // https://github.com/balancer-labs/balancer-core/blob/f4ed5d65362a8d6cec21662fb6eae233b0babc1f/contracts/BMath.sol#L117
         let half_source_amount = source_amount.checked_add(1)?.checked_div(2)?; // round up
         
-        let owner_fee = fees.owner_trading_fee(half_source_amount)?;
-
         let pre_fee_source_amount = fees.pre_trading_fee_amount(half_source_amount)?;
+
+        let owner_fee = fees.owner_trading_fee(pre_fee_source_amount)?;
 
         let adjusted_source_amount = source_amount
             .checked_sub(half_source_amount)?
