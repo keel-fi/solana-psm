@@ -974,7 +974,7 @@ impl Processor {
             pool_token_program_info,
             source_a_info,
             source_b_info,
-            None,
+            pool_fee_account_info,
         )?;
 
         let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
