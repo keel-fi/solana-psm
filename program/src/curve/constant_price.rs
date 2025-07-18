@@ -20,7 +20,7 @@ use {
 /// Get the amount of pool tokens for the given amount of token A or B.
 ///
 /// The constant product implementation uses the Balancer formulas found at
-/// <https://balancer.finance/whitepaper/#single-asset-deposit>, specifically
+/// <https://docs.balancer.fi/whitepaper.pdf>, specifically
 /// in the case for 2 tokens, each weighted at 1/2.
 pub fn trading_tokens_to_pool_tokens(
     token_b_price: u64,
@@ -65,7 +65,7 @@ pub struct ConstantPriceCurve {
 }
 
 impl CurveCalculator for ConstantPriceCurve {
-    /// Constant price curve always returns 1:1
+    /// Charge only full multiples of price; drop remainder.
     fn swap_without_fees(
         &self,
         source_amount: u128,

@@ -128,7 +128,7 @@ pub fn deposit_single_token_type(
 /// Get the amount of pool tokens for the withdrawn amount of token A or B.
 ///
 /// The constant product implementation uses the Balancer formulas found at
-/// <https://balancer.finance/whitepaper/#single-asset-withdrawal>, specifically
+/// <https://docs.balancer.fi/whitepaper.pdf>, specifically
 /// in the case for 2 tokens, each weighted at 1/2.
 pub fn withdraw_single_token_type_exact_out(
     source_amount: u128,
