@@ -122,7 +122,7 @@ pub trait CurveCalculator: Debug + DynPack {
     ///
     /// See more background for the calculation at:
     ///
-    /// <https://balancer.finance/whitepaper/#single-asset-deposit-withdrawal>
+    /// <https://docs.balancer.fi/whitepaper.pdf>
     fn deposit_single_token_type(
         &self,
         source_amount: u128,
@@ -142,7 +142,7 @@ pub trait CurveCalculator: Debug + DynPack {
     ///
     /// See more background for the calculation at:
     ///
-    /// <https://balancer.finance/whitepaper/#single-asset-deposit-withdrawal>
+    /// <https://docs.balancer.fi/whitepaper.pdf>
     fn withdraw_single_token_type_exact_out(
         &self,
         source_amount: u128,

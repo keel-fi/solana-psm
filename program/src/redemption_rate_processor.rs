@@ -101,12 +101,15 @@ fn create_new_swap_state(
     Ok(new_swap)
 
 }
+
+
 fn extract_curve(
     input: &[u8]
 ) -> Result<RedemptionRateCurve, ProgramError> {
-    let input = array_ref![input, 291, 81];
+    // equal to SwapVersion::LATEST_LEN - SwapCurve::LEN , SwapCurve::LEN
+    let input = array_ref![input, SwapVersion::LATEST_LEN - SwapCurve::LEN, SwapCurve::LEN];
 
-    let (curve_type, calculator) = array_refs![input, 1, 80];
+    let (curve_type, calculator) = array_refs![input, 1, RedemptionRateCurve::LEN];
 
     let curve_type = curve_type[0].try_into()?;
 
@@ -116,4 +119,21 @@ fn extract_curve(
         },
         _ => return Err(ProgramError::InvalidAccountData)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_swap_curve_len() {
+        assert_eq!(SwapCurve::LEN, 81);
+        assert_eq!(SwapCurve::LEN - 1, RedemptionRateCurve::LEN);
+    }
+
+    #[test]
+    fn test_swap_v1_curve_offset() {
+        // requires that SwapCurve is packed last in SwapVersion
+        assert_eq!(SwapVersion::LATEST_LEN - SwapCurve::LEN, 291);
+    }
 }

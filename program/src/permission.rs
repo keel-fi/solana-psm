@@ -305,7 +305,9 @@ pub fn process_initialize_permission(
     Ok(())
 }
 
-/// Processes permission updates
+/// Processes permission updates.
+/// `permission_info` being equal to `update_permission_info`
+/// is valid for revoking own role.
 pub fn process_update_permission(
     program_id: &Pubkey,
     accounts: &[AccountInfo],

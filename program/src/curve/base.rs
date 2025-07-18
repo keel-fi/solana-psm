@@ -264,8 +264,8 @@ impl Sealed for SwapCurve {}
 impl Pack for SwapCurve {
     /// Size of encoding of all curve parameters, which include fees and any
     /// other constants used to calculate swaps, deposits, and withdrawals.
-    /// This includes 1 byte for the type, and 72 for the calculator to use as
-    /// it needs.  Some calculators may be smaller than 72 bytes.
+    /// This includes 1 byte for the type, and 80 for the calculator to use as
+    /// it needs.  Some calculators may be smaller than 80 bytes.
     const LEN: usize = 81;
 
     /// Unpacks a byte buffer into a SwapCurve

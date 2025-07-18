@@ -78,6 +78,7 @@ pub struct RedemptionRateCurve {
 }
 
 impl RedemptionRateCurve {
+
     /// Returns conversion rate
     pub fn get_conversion_rate(
         &self,

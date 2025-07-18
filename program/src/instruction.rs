@@ -155,6 +155,13 @@ pub enum SwapInstruction {
     ///   8. `[writable]` Pool Token Account to deposit the initial pool token
     ///      supply. Must be empty, not owned by swap authority.
     ///   9. `[]` Pool Token program id
+    /// 
+    /// *Extra accounts for `RedemptionRateCurve`:*
+    /// 
+    ///  10.  `[writable]` Permission account to be created.
+    ///  11.  `[]` Authority pubkey, linked to Permission account. Will be super-admin.
+    ///  12.  `[signer, writable]` Payer (funds `create_account` for the permission account).
+    ///  13.  `[]` System program id.
     Initialize(Initialize),
 
     ///   Swap the tokens in the pool.
@@ -533,7 +540,7 @@ impl SwapInstruction {
     }
 }
 
-/// Extyra accounts needed for RedemptionRate curve
+/// Extra accounts needed for RedemptionRate curve
 pub struct RedemptionRateExtraAccounts<'a> {
     /// pda created at initialization
     pub permission_account: &'a Pubkey,
