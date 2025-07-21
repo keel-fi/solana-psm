@@ -96,13 +96,11 @@ impl SwapVersion {
         }
     }
 
-    /// Special check to be done before any instruction processing, works for
-    /// all versions
+    /// Returns `true` if the second byte (initialized-flag) is non-zero.
+    /// Offsets are identical for `SwapV1` and future versions.
+    #[inline]
     pub fn is_initialized(input: &[u8]) -> bool {
-        match Self::unpack(input) {
-            Ok(swap) => swap.is_initialized(),
-            Err(_) => false,
-        }
+        input.len() > 1 && input[1] != 0
     }
 }
 

@@ -1021,51 +1021,51 @@ impl Processor {
             )
             .ok_or(SwapError::FeeCalculationFailure)?;
 
-        let host_fee = token_swap
-            .fees()
-            .host_fee(owner_fee_pool)
-            .ok_or(SwapError::FeeCalculationFailure)?;
+        if owner_fee_pool > 0 {
+            // if host_fee_account_info is provided, we process host fees and substract from `owner_fee_pool`
+            if let Some(host_fee_account_info) = host_fee_account_info {
+                if *pool_mint_info.key
+                    != Self::unpack_token_account(host_fee_account_info, token_swap.token_program_id())?.mint
+                {
+                    return Err(SwapError::InvalidHostFeeMint.into());
+                }
 
-        if let Some(host_fee_account_info) = host_fee_account_info {
-            // Must be the same mint as the pool
-            if *pool_mint_info.key
-                != Self::unpack_token_account(host_fee_account_info, token_swap.token_program_id())?.mint
-            {
-                return Err(SwapError::IncorrectPoolMint.into());
+                let host_fee = token_swap
+                    .fees()
+                    .host_fee(owner_fee_pool)
+                    .ok_or(SwapError::FeeCalculationFailure)?;
+
+                if host_fee > 0 {
+                    owner_fee_pool = owner_fee_pool
+                        .checked_sub(host_fee)
+                        .ok_or(SwapError::FeeCalculationFailure)?;
+
+                    Self::token_mint_to(
+                        swap_info.key,
+                        pool_token_program_info.clone(),
+                        pool_mint_info.clone(),
+                        host_fee_account_info.clone(),
+                        authority_info.clone(),
+                        token_swap.bump_seed(),
+                        to_u64(host_fee)?,
+                    )?;
+                }
             }
-            
-            if host_fee > 0 {
-                Self::token_mint_to(
-                    swap_info.key,
-                    pool_token_program_info.clone(),
-                    pool_mint_info.clone(),
-                    host_fee_account_info.clone(),
-                    authority_info.clone(),
-                    token_swap.bump_seed(),
-                    to_u64(host_fee)?,
-                )?;
-            }
-        }
 
-        owner_fee_pool = if host_fee_account_info.is_some() {
-            owner_fee_pool
-                .checked_sub(host_fee)
-                .ok_or(SwapError::FeeCalculationFailure)?
-        } else {
-            owner_fee_pool
-        };
-
-        if let Some(pool_fee_account_info) = pool_fee_account_info {
-            if token_swap.check_pool_fee_info(pool_fee_account_info).is_ok() && owner_fee_pool > 0 {
-                Self::token_mint_to(
-                    swap_info.key,
-                    pool_token_program_info.clone(),
-                    pool_mint_info.clone(),
-                    pool_fee_account_info.clone(),
-                    authority_info.clone(),
-                    token_swap.bump_seed(),
-                    to_u64(owner_fee_pool)?,
-                )?;
+            // if pool_fee_account_info is provided, we verify that owner_fee_pool is still > 0
+            // (after host_fee substraction) and mint
+            if let Some(pool_fee_account_info) = pool_fee_account_info {
+                if token_swap.check_pool_fee_info(pool_fee_account_info).is_ok() && owner_fee_pool > 0 {
+                    Self::token_mint_to(
+                        swap_info.key,
+                        pool_token_program_info.clone(),
+                        pool_mint_info.clone(),
+                        pool_fee_account_info.clone(),
+                        authority_info.clone(),
+                        token_swap.bump_seed(),
+                        to_u64(owner_fee_pool)?,
+                    )?;
+                }
             }
         }
 
