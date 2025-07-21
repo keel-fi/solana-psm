@@ -40,12 +40,18 @@ pub fn process_curve_update(
         return Err(ProgramError::IllegalOwner)
     }
 
-    if permission_info.owner != program_id {
-        return Err(ProgramError::IllegalOwner)
+    if !signer_info.is_signer {
+        return Err(ProgramError::MissingRequiredSignature)
     }
 
-    let permission = Permission::unpack(&permission_info.data.borrow())?;
-    permission.validate_update_params_permission(swap_info, signer_info)?;
+    let permission = Permission::unpack_permission(
+        permission_info, 
+        swap_info, 
+        signer_info, 
+        program_id
+    )?;
+    
+    permission.validate_update_params_permission()?;
 
     let mut swap_data = swap_info.data.borrow_mut();
     let swap = SwapVersion::unpack(&swap_data)?;

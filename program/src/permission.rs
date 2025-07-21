@@ -73,6 +73,42 @@ impl Permission {
     /// Seed for PDA
     pub const PERMISSION_SEED: &'static [u8] = b"permission";
 
+    /// Unpacks and validates a permission.
+    /// It checks: `permission_info` owner,
+    /// `permission` PDA, `permission.authority` and `permission.swap`.
+    pub fn unpack_permission(
+        permission_info: &AccountInfo,
+        swap_info: &AccountInfo,
+        signer_info: &AccountInfo,
+        program_id: &Pubkey
+    ) -> Result<Self, ProgramError> {
+        if permission_info.owner != program_id {
+            return Err(ProgramError::IllegalOwner)
+        }
+
+        let (permission_pda, _) = Self::derive_permission_pubkey_and_bump(
+            swap_info.key, 
+            signer_info.key
+        );
+
+        if permission_pda != *permission_info.key {
+            return Err(SwapError::InvalidUpdatePermission.into())
+        }
+
+        let permission = Permission::unpack(&permission_info.data.borrow())?;
+
+        if permission.authority != *signer_info.key {
+            return Err(SwapError::InvalidUpdatePermission.into())
+        }
+
+        if permission.swap != *swap_info.key {
+            return Err(SwapError::InvalidUpdatePermission.into())
+        }
+
+        Ok(permission)
+
+    }
+
 
     /// Derives Permission address based on swap and authority
     fn derive_permission_pubkey_and_bump(
@@ -94,11 +130,7 @@ impl Permission {
     /// validates that the signer and its permission can update params
     pub fn validate_update_params_permission(
         &self,
-        swap_info: &AccountInfo,
-        signer_info: &AccountInfo
     ) -> Result<(), ProgramError> {
-        self.validate_signer_and_permission(swap_info, signer_info)?;
-
         if !self.can_update_parameters {
             return Err(SwapError::InvalidUpdatePermission.into())
         }
@@ -109,33 +141,8 @@ impl Permission {
     /// validates that the signer and its permission is super admin
     pub fn validate_super_admin_permission(
         &self,
-        swap_info: &AccountInfo,
-        signer_info: &AccountInfo
     ) -> Result<(), ProgramError> {
-        self.validate_signer_and_permission(swap_info, signer_info)?;
-
         if !self.is_super_admin {
-            return Err(SwapError::InvalidUpdatePermission.into())
-        }
-
-        Ok(())
-    }
-
-    /// checks that signer and its permission are valid
-    fn validate_signer_and_permission(
-        &self,
-        swap_info: &AccountInfo,
-        signer_info: &AccountInfo
-    ) -> Result<(), ProgramError> {
-        if !signer_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature)
-        }
-
-        if &self.swap != swap_info.key {
-            return Err(SwapError::InvalidUpdatePermission.into())
-        }
-
-        if self.authority != *signer_info.key {
             return Err(SwapError::InvalidUpdatePermission.into())
         }
 
@@ -278,12 +285,18 @@ pub fn process_initialize_permission(
         return Err(ProgramError::IllegalOwner)
     }
 
-    if permission_info.owner != program_id {
-        return Err(ProgramError::IllegalOwner)
+    if !signer_info.is_signer {
+        return Err(ProgramError::MissingRequiredSignature)
     }
 
-    let permission = Permission::unpack(&permission_info.data.borrow())?;
-    permission.validate_super_admin_permission(swap_info, signer_info)?;
+    let permission = Permission::unpack_permission(
+        permission_info, 
+        swap_info, 
+        signer_info, 
+        program_id
+    )?;
+
+    permission.validate_super_admin_permission()?;
 
     let new_permission = Permission {
         swap: *swap_info.key,
@@ -325,16 +338,22 @@ pub fn process_update_permission(
         return Err(ProgramError::IllegalOwner)
     }
 
-    if permission_info.owner != program_id {
-        return Err(ProgramError::IllegalOwner)
+    if !signer_info.is_signer {
+        return Err(ProgramError::MissingRequiredSignature)
     }
 
     if update_permission_info.owner != program_id {
         return Err(ProgramError::IllegalOwner)
     }
 
-    let permission: Permission = Permission::unpack(&permission_info.data.borrow())?;
-    permission.validate_super_admin_permission(swap_info, signer_info)?;
+    let permission: Permission = Permission::unpack_permission(
+        permission_info, 
+        swap_info, 
+        signer_info, 
+        program_id
+    )?;
+
+    permission.validate_super_admin_permission()?;
     
     let mut update_permission_data = update_permission_info.data.borrow_mut();
 
