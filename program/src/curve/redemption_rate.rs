@@ -125,31 +125,21 @@ impl RedemptionRateCurve {
             
             while n > U256::zero() {
                 // Calculate x^2
-                let xx = x * x;
-                // Check for overflow
-                if xx / x != x {
-                    return None;
-                }
+                let xx = x.checked_mul(x)?;
+
                 // Add half for rounding
-                let xx_round = xx + half;
-                if xx_round < xx {
-                    return None;
-                }
+                let xx_round = xx.checked_add(half)?;
+
                 // Divide by RAY
                 x = xx_round / ray_u256;
                 
                 // If n is odd, multiply by x
                 if n % U256::from(2) == U256::one() {
-                    let zx = z * x;
-                    // Check for overflow
-                    if x != U256::zero() && zx / x != z {
-                        return None;
-                    }
+                    let zx = z.checked_mul(x)?;
+
                     // Add half for rounding
-                    let zx_round = zx + half;
-                    if zx_round < zx {
-                        return None;
-                    }
+                    let zx_round = zx.checked_add(half)?;
+
                     // Divide by RAY
                     z = zx_round / ray_u256;
                 }
@@ -393,24 +383,17 @@ impl CurveCalculator for RedemptionRateCurve {
     ) -> Option<spl_math::precise_number::PreciseNumber> {
         let token_b_price = self.get_conversion_rate(timestamp?)?;
         let ray = U256::from(self.ray);
+
+        let swap_token_a_amount = U256::from(swap_token_a_amount);
         let swap_token_b_amount = U256::from(swap_token_b_amount);
 
         let swap_token_b_value = swap_token_b_amount
             .checked_mul(token_b_price)?
             .checked_div(ray)?;
 
-        // special logic in case we're close to the limits, avoid overflowing u128
-        let value = if swap_token_b_value.saturating_sub(U256::from(u64::MAX))
-            > U256::MAX.saturating_sub(U256::from(u64::MAX))
-        {
-            swap_token_b_value
-                .checked_div(U256::from(2))?
-                .checked_add(U256::from(swap_token_a_amount).checked_div(U256::from(2))?)?
-        } else {
-            U256::from(swap_token_a_amount)
-                .checked_add(swap_token_b_value)?
-                .checked_div(U256::from(2))?
-        };
+        let value = swap_token_a_amount
+            .checked_add(swap_token_b_value)?
+            .checked_div(U256::from(2))?;
     
         PreciseNumber::new(value.try_into().ok()?)
     }
