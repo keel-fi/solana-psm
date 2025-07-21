@@ -368,7 +368,8 @@ impl Processor {
         let timestamp_opt = match swap_curve.curve_type {
             CurveType::RedemptionRateCurve => Some(Clock::get()?.unix_timestamp as u128),
             _ => None
-        } ;
+        };
+
         swap_curve.calculator.validate(timestamp_opt)?;
 
         let initial_amount = swap_curve.calculator.new_pool_supply();
@@ -384,6 +385,11 @@ impl Processor {
         )?;
 
         if swap_curve.curve_type == CurveType::RedemptionRateCurve {
+            // RedemptionRateCurve requires both mints to have same decimals
+            if token_a_mint_state.base.decimals != token_b_mint_state.base.decimals {
+                return Err(SwapError::MismatchedMintDecimals.into())
+            }
+
             // permission account info
             let permission_info = next_account_info(account_info_iter)?;
             // super_admin account info
@@ -705,12 +711,9 @@ impl Processor {
         let token_a = Self::unpack_token_account(token_a_info, token_swap.token_program_id())?;
         let token_b = Self::unpack_token_account(token_b_info, token_swap.token_program_id())?;
         let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
-        let current_pool_mint_supply = u128::from(pool_mint.supply);
-        let (pool_token_amount, pool_mint_supply) = if current_pool_mint_supply > 0 {
-            (u128::from(pool_token_amount), current_pool_mint_supply)
-        } else {
-            (calculator.new_pool_supply(), calculator.new_pool_supply())
-        };
+        
+        let pool_mint_supply = u128::from(pool_mint.supply);
+        let pool_token_amount = u128::from(pool_token_amount);
 
         let results = calculator
             .pool_tokens_to_trading_tokens(
@@ -979,25 +982,22 @@ impl Processor {
 
         let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
         let pool_mint_supply = u128::from(pool_mint.supply);
-        let (pool_token_amount, owner_fee) = if pool_mint_supply > 0 {
-            let SingleTokenTypeResult {
-                amount, owner_fee
-            } = token_swap
-                .swap_curve()
-                .deposit_single_token_type(
-                    u128::from(source_token_amount),
-                    u128::from(swap_token_a.amount),
-                    u128::from(swap_token_b.amount),
-                    pool_mint_supply,
-                    trade_direction,
-                    token_swap.fees(),
-                    token_swap.get_current_timestamp_opt()?
-                )
-                .ok_or(SwapError::ZeroTradingTokens)?;
-            (amount, owner_fee)
-        } else {
-            (calculator.new_pool_supply(), 0)
-        };
+
+        let SingleTokenTypeResult { 
+            amount: pool_token_amount, 
+            owner_fee 
+        } = token_swap
+            .swap_curve()
+            .deposit_single_token_type(
+                u128::from(source_token_amount),
+                u128::from(swap_token_a.amount),
+                u128::from(swap_token_b.amount),
+                pool_mint_supply,
+                trade_direction,
+                token_swap.fees(),
+                token_swap.get_current_timestamp_opt()?
+            )
+            .ok_or(SwapError::ZeroTradingTokens)?;
 
         let pool_token_amount = to_u64(pool_token_amount)?;
         if pool_token_amount < minimum_pool_token_amount {
