@@ -147,9 +147,12 @@ pub enum SwapError {
     /// Unsupported token extension.
     #[error("Unsupported token extension")]
     UnsupportedTokenExtension,
-    /// Token A and B have different decimals
+    /// Token A and B have different decimals.
     #[error("Mint A and B have mismatched decimals")]
-    MismatchedMintDecimals
+    MismatchedMintDecimals,
+    /// The `host_fee` account provided does not have a valid mint.
+    #[error("Host fee account has an invalid mint")]
+    InvalidHostFeeMint,
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {
@@ -259,7 +262,10 @@ impl PrintProgramError for SwapError {
             },
             SwapError::MismatchedMintDecimals => {
                 msg!("Error: Mint A and B have mismatched decimals")
-            }
+            },
+            SwapError::InvalidHostFeeMint => {
+                msg!("Error: Host fee account has an invalid mint")
+            },
         }
     }
 }
