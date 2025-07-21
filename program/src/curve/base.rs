@@ -113,13 +113,10 @@ impl SwapCurve {
 
         // Recalculate fees if curve couldn't use the full source_amount_less_fees
         if amount_used < source_amount_less_fees {
-            // Calculate how much less was used than expected
-            let difference = source_amount_less_fees - amount_used;
-            // Find what the original amount should have been
-            let modified_source_amount = source_amount.checked_sub(difference)?;
+            let pre_fee_amount = fees.pre_trading_fee_amount(amount_used)?;
             // Recalculate fees based on the adjusted amount
-            trade_fee = fees.trading_fee(modified_source_amount)?;
-            owner_fee = fees.owner_trading_fee(modified_source_amount)?;
+            trade_fee = fees.trading_fee(pre_fee_amount)?;
+            owner_fee = fees.owner_trading_fee(pre_fee_amount)?;
             total_fees = trade_fee.checked_add(owner_fee)?;
         }
 
