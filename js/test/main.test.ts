@@ -40,7 +40,7 @@ describe('spl-token-swap instructions', () => {
   it('executes properly', async () => {
     // These test cases are designed to run sequentially and in the following order
     console.log('Run test: createTokenSwap (redemption rate curve)');
-    const redemptionRate = new Uint8Array(80);
+    const redemptionRate = new Uint8Array(64);
 
     await createTokenSwap(CurveType.RedemptionRate, redemptionRate);
     console.log(
@@ -152,11 +152,10 @@ export async function createTokenSwap(
   const tokenSwapAccount = Keypair.generate();
 
   const current_time = await connection.getBlockTime(await connection.getSlot());
-  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 0);      // ray: 0-15
-  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 16);  // max_ssr: 16-31
-  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 32);      // ssr: 32-47
-  curveParameters.set(bigIntToLittleEndianBytes(BigInt(current_time!), 16), 48);      // rho: 48-63
-  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 64);      // chi: 64-79
+  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 0);  // max_ssr:  0-15
+  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 16);      // ssr: 16-31 
+  curveParameters.set(bigIntToLittleEndianBytes(BigInt(current_time!), 16), 32);      // rho: 32-47
+  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 48);      // chi: 48-63
 
   [authority, bumpSeed] = await PublicKey.findProgramAddress(
     [tokenSwapAccount.publicKey.toBuffer()],
