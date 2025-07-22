@@ -628,13 +628,12 @@ impl Processor {
             let mut pool_token_amount = token_swap
                 .swap_curve()
                 .calculator
-                .withdraw_single_token_type_exact_out(
+                .deposit_single_token_type(
                     result.owner_fee,
                     swap_token_a_amount,
                     swap_token_b_amount,
                     u128::from(pool_mint.supply),
                     trade_direction,
-                    RoundDirection::Floor,
                     token_swap.get_current_timestamp_opt()?
                 )
                 .ok_or(SwapError::FeeCalculationFailure)?;
@@ -6567,13 +6566,12 @@ mod tests {
         let first_fee = if results.owner_fee > 0 {
             swap_curve
                 .calculator
-                .withdraw_single_token_type_exact_out(
+                .deposit_single_token_type(
                     results.owner_fee,
                     reserve_a.into(),
                     reserve_b.into(),
                     initial_supply.into(),
                     TradeDirection::AtoB,
-                    RoundDirection::Floor,
                     accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap()
@@ -6659,13 +6657,12 @@ mod tests {
         let second_fee = if results.owner_fee > 0 {
             swap_curve
                 .calculator
-                .withdraw_single_token_type_exact_out(
+                .deposit_single_token_type(
                     results.owner_fee,
                     reserve_a2.into(),
                     reserve_b2.into(),
                     initial_supply.into(),
                     TradeDirection::BtoA,
-                    RoundDirection::Floor,
                     accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap()
