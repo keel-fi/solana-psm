@@ -425,20 +425,23 @@ impl Processor {
 
             let system_program_info = next_account_info(account_info_iter)?;
             
-            let permission = Permission {
-                swap: *swap_info.key,
-                authority: *super_admin_info.key,
-                is_super_admin: true,
-                can_update_parameters: true,
-            };
             // create permission with invoke_signed
             Permission::create_permission_account(
+                program_id,
                 payer_info.clone(), 
                 permission_info.clone(), 
                 system_program_info.clone(),
                 swap_info.key, 
                 super_admin_info.key
             )?;
+
+            let permission = Permission {
+                is_initialized: true,
+                swap: *swap_info.key,
+                authority: *super_admin_info.key,
+                is_super_admin: true,
+                can_update_parameters: true,
+            };
 
             // pack permission in permission_info
             Permission::pack(permission, &mut permission_info.data.borrow_mut())?;
