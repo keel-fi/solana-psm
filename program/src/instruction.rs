@@ -887,7 +887,7 @@ mod tests {
         expect.extend_from_slice(&host_fee_denominator.to_le_bytes());
         expect.push(curve_type as u8);
         expect.extend_from_slice(&token_b_offset.to_le_bytes());
-        expect.extend_from_slice(&[0u8; 72]);
+        expect.extend_from_slice(&[0u8; 56]);
         assert_eq!(packed, expect);
         let unpacked = SwapInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);

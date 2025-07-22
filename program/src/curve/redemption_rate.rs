@@ -20,10 +20,13 @@ use super::calculator::{
     TradeDirection, TradingTokenResult
 };
 
+
+/// Chi scaling factor (1e27)
+pub const RAY: u128 = 1_000_000_000_000_000_000_000_000_000;
+
 /// Get the amount of pool tokens for the given amount of token A or B.
 pub fn trading_tokens_to_pool_tokens(
     token_b_price: U256,
-    ray: U256,
     source_amount: u128,
     swap_token_a_amount: u128,
     swap_token_b_amount: u128,
@@ -35,12 +38,12 @@ pub fn trading_tokens_to_pool_tokens(
         TradeDirection::AtoB => U256::from(source_amount),
         TradeDirection::BtoA => U256::from(source_amount)
             .checked_mul(token_b_price)?
-            .checked_div(ray)?
+            .checked_div(U256::from(RAY))?
     };
 
     let total_value = U256::from(swap_token_b_amount)
         .checked_mul(token_b_price)?
-        .checked_div(ray)?
+        .checked_div(U256::from(RAY))?
         .checked_add(U256::from(swap_token_a_amount))?;
 
     let pool_supply = U256::from(pool_supply);
@@ -65,8 +68,6 @@ pub fn trading_tokens_to_pool_tokens(
 /// RedemptionRateCurve struct implementing CurveCalculator
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RedemptionRateCurve {
-    /// Fixed-point scaling factor.
-    pub ray: u128,
     /// Maximum allowed SSR value.
     pub max_ssr: u128,
     /// Current Stable Savings Rate (SSR), compounding per second, scaled by `ray`.
@@ -88,7 +89,7 @@ impl RedemptionRateCurve {
             return Some(U256::from(self.chi))
         } 
         let duration = timestamp.checked_sub(self.rho)?;
-        let rate = self._rpow(self.ssr, duration)? * U256::from(self.chi) / U256::from(self.ray);
+        let rate = self._rpow(self.ssr, duration)? * U256::from(self.chi) / U256::from(RAY);
         Some(rate)
     }
 
@@ -103,7 +104,7 @@ impl RedemptionRateCurve {
         let mut z: U256;
         let x_u256 = U256::from(x);
         let n_u256 = U256::from(n);
-        let ray_u256 = U256::from(self.ray);
+        let ray_u256 = U256::from(RAY);
 
         if x_u256 == U256::zero() {
             if n_u256 == U256::zero() {
@@ -161,7 +162,7 @@ impl RedemptionRateCurve {
         if rho > current_timestamp {
             return Err(SwapError::InvalidRho.into())
         }
-        if ssr < self.ray {
+        if ssr < RAY {
             return Err(SwapError::InvalidSsr.into())
         }
         if self.max_ssr != 0 && ssr > self.max_ssr {
@@ -170,7 +171,6 @@ impl RedemptionRateCurve {
 
         let new_calculator = if self.rho == 0 {
             RedemptionRateCurve {
-                ray: self.ray,
                 max_ssr: self.max_ssr,
                 ssr,
                 rho,
@@ -192,7 +192,7 @@ impl RedemptionRateCurve {
                     .ok_or(SwapError::CalculationFailure)?
                     .checked_mul(U256::from(self.chi))
                     .ok_or(ProgramError::ArithmeticOverflow)?
-                    .checked_div(U256::from(self.ray))
+                    .checked_div(U256::from(RAY))
                     .ok_or(ProgramError::ArithmeticOverflow)?;
                 
     
@@ -202,7 +202,6 @@ impl RedemptionRateCurve {
             }
     
             RedemptionRateCurve {
-                ray: self.ray,
                 max_ssr: self.max_ssr,
                 ssr,
                 rho,
@@ -225,7 +224,7 @@ impl CurveCalculator for RedemptionRateCurve {
     ) -> Option<SwapWithoutFeesResult> {
         let token_b_price = self.get_conversion_rate(timestamp?)?;
         let source_amount = U256::from(source_amount);
-        let ray = U256::from(self.ray);
+        let ray = U256::from(RAY);
 
         let (source_amount_swapped, destination_amount_swapped) = match trade_direction {
             TradeDirection::BtoA => (source_amount, source_amount.checked_mul(token_b_price)?.checked_div(ray)?),
@@ -304,11 +303,9 @@ impl CurveCalculator for RedemptionRateCurve {
         timestamp: Option<u128>,
     ) -> Option<u128> {
         let token_b_price = self.get_conversion_rate(timestamp?)?;
-        let ray = U256::from(self.ray);
 
         trading_tokens_to_pool_tokens(
             token_b_price, 
-            ray, 
             source_amount, 
             swap_token_a_amount, 
             swap_token_b_amount, 
@@ -330,11 +327,9 @@ impl CurveCalculator for RedemptionRateCurve {
     ) -> Option<u128> {
 
         let token_b_price = self.get_conversion_rate(timestamp?)?;
-        let ray = U256::from(self.ray);
 
         trading_tokens_to_pool_tokens(
             token_b_price, 
-            ray, 
             source_amount, 
             swap_token_a_amount, 
             swap_token_b_amount, 
@@ -345,12 +340,6 @@ impl CurveCalculator for RedemptionRateCurve {
     }
 
     fn validate(&self, timestamp: Option<u128>) -> Result<(), SwapError> {
-        const CANONICAL_RAY: u128 = 1_000_000_000_000_000_000_000_000_000;
-
-        if self.ray != CANONICAL_RAY {
-            return Err(SwapError::InvalidRay);
-        }
-
         let timestamp = timestamp
             .ok_or(SwapError::MissingTimestamp)?;
 
@@ -382,7 +371,7 @@ impl CurveCalculator for RedemptionRateCurve {
         timestamp: Option<u128>
     ) -> Option<spl_math::precise_number::PreciseNumber> {
         let token_b_price = self.get_conversion_rate(timestamp?)?;
-        let ray = U256::from(self.ray);
+        let ray = U256::from(RAY);
 
         let swap_token_a_amount = U256::from(swap_token_a_amount);
         let swap_token_b_amount = U256::from(swap_token_b_amount);
@@ -409,21 +398,19 @@ impl IsInitialized for RedemptionRateCurve {
 impl Sealed for RedemptionRateCurve {}
 
 impl Pack for RedemptionRateCurve {
-    const LEN: usize = 80;
+    const LEN: usize = 64;
 
     fn pack_into_slice(&self, output: &mut [u8]) {
         (self as &dyn DynPack).pack_into_slice(output);
     }
 
     fn unpack_from_slice(input: &[u8]) -> Result<RedemptionRateCurve, ProgramError> {
-        let ray = array_ref![input, 0, 16];
-        let max_ssr = array_ref![input, 16, 16];
-        let ssr = array_ref![input, 32, 16];
-        let rho = array_ref![input, 48, 16];
-        let chi = array_ref![input, 64, 16];
+        let max_ssr = array_ref![input, 0, 16];
+        let ssr = array_ref![input, 16, 16];
+        let rho = array_ref![input, 32, 16];
+        let chi = array_ref![input, 48, 16];
 
         Ok(Self {
-            ray: u128::from_le_bytes(*ray),
             max_ssr: u128::from_le_bytes(*max_ssr),
             ssr: u128::from_le_bytes(*ssr),
             rho: u128::from_le_bytes(*rho),
@@ -434,13 +421,11 @@ impl Pack for RedemptionRateCurve {
 
 impl DynPack for RedemptionRateCurve {
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let (ray, rest) = output.split_at_mut(16);
-        let (max_ssr, rest) = rest.split_at_mut(16);
+        let (max_ssr, rest) = output.split_at_mut(16);
         let (ssr, rest) = rest.split_at_mut(16);
         let (rho, rest) = rest.split_at_mut(16);
         let (chi, _) = rest.split_at_mut(16);
 
-        ray.copy_from_slice(&self.ray.to_le_bytes());
         max_ssr.copy_from_slice(&self.max_ssr.to_le_bytes());
         ssr.copy_from_slice(&self.ssr.to_le_bytes());
         rho.copy_from_slice(&self.rho.to_le_bytes());
@@ -453,7 +438,6 @@ mod rpow_tests {
     use super::*;
     use proptest::prelude::*;
 
-    const RAY: u128 = 10u128.pow(27);
     const FIVE_PCT_APY_SSR: u128 = 1_000_000_001_547_125_957_863_212_448;
     const SECONDS_PER_YEAR: u128 = 365 * 24 * 60 * 60;
     const SECONDS_PER_FIFTY_YEARS: u128 = 365 * 24 * 60 * 60 * 50;
@@ -466,7 +450,6 @@ mod rpow_tests {
         max_ssr: u128
     ) -> RedemptionRateCurve {
         RedemptionRateCurve {
-            ray: RAY, 
             max_ssr,
             ssr,
             rho,
@@ -800,7 +783,6 @@ mod tests {
         proptest::prelude::*,
     };
 
-    const RAY: u128 = 10u128.pow(27);
     const FIVE_PCT_APY_SSR: u128 = 1_000_000_001_547_125_957_863_212_448;
     const ONE_HUNDRED_PCT_APY_SSR: u128 = 1_000_000_021_979_553_151_239_153_020;
     const SECONDS_PER_YEAR: u128 = 365 * 24 * 60 * 60;
@@ -817,7 +799,6 @@ mod tests {
         max_ssr: u128
     ) -> RedemptionRateCurve {
         RedemptionRateCurve {
-            ray: RAY, 
             max_ssr,
             ssr,
             rho,
@@ -1209,7 +1190,6 @@ mod tests {
         assert_eq!(curve, unpacked);
 
         let mut packed = vec![];
-        packed.extend_from_slice(&RAY.to_le_bytes());
         packed.extend_from_slice(&0u128.to_le_bytes());
         packed.extend_from_slice(&ssr.to_le_bytes());
         packed.extend_from_slice(&rho.to_le_bytes());
