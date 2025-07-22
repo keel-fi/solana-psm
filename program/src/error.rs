@@ -150,9 +150,9 @@ pub enum SwapError {
     /// Token A and B have different decimals.
     #[error("Mint A and B have mismatched decimals")]
     MismatchedMintDecimals,
-    /// The `host_fee` account provided does not have a valid mint.
-    #[error("Host fee account has an invalid mint")]
-    InvalidHostFeeMint,
+    /// The token account is not associated with the expected mint.
+    #[error("Account mint does not match expected mint")]
+    InvalidAccountMint
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {
@@ -263,9 +263,9 @@ impl PrintProgramError for SwapError {
             SwapError::MismatchedMintDecimals => {
                 msg!("Error: Mint A and B have mismatched decimals")
             },
-            SwapError::InvalidHostFeeMint => {
-                msg!("Error: Host fee account has an invalid mint")
-            },
+            SwapError::InvalidAccountMint => {
+                msg!("Error: Account mint does not match expected mint")
+            }
         }
     }
 }
