@@ -225,10 +225,10 @@ impl IsInitialized for SwapV1 {
 }
 
 impl Pack for SwapV1 {
-    const LEN: usize = 371;
+    const LEN: usize = 355;
 
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, 371];
+        let output = array_mut_ref![output, 0, 355];
         let (
             is_initialized,
             bump_seed,
@@ -241,7 +241,7 @@ impl Pack for SwapV1 {
             pool_fee_account,
             fees,
             swap_curve,
-        ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 81];
+        ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 65];
         is_initialized[0] = self.is_initialized as u8;
         bump_seed[0] = self.bump_seed;
         token_program_id.copy_from_slice(self.token_program_id.as_ref());
@@ -257,7 +257,7 @@ impl Pack for SwapV1 {
 
     /// Unpacks a byte buffer into a [SwapV1](struct.SwapV1.html).
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![input, 0, 371];
+        let input = array_ref![input, 0, 355];
         #[allow(clippy::ptr_offset_with_cast)]
         let (
             is_initialized,
@@ -271,7 +271,7 @@ impl Pack for SwapV1 {
             pool_fee_account,
             fees,
             swap_curve,
-        ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 81];
+        ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 65];
         Ok(Self {
             is_initialized: match is_initialized {
                 [0] => false,
@@ -406,7 +406,7 @@ mod tests {
         packed.extend_from_slice(&TEST_FEES.host_fee_denominator.to_le_bytes());
         packed.push(TEST_CURVE_TYPE);
         packed.extend_from_slice(&TEST_TOKEN_B_OFFSET.to_le_bytes());
-        packed.extend_from_slice(&[0u8; 72]);
+        packed.extend_from_slice(&[0u8; 56]);
         let unpacked = SwapV1::unpack(&packed).unwrap();
         assert_eq!(swap_info, unpacked);
 

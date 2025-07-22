@@ -261,15 +261,15 @@ impl Sealed for SwapCurve {}
 impl Pack for SwapCurve {
     /// Size of encoding of all curve parameters, which include fees and any
     /// other constants used to calculate swaps, deposits, and withdrawals.
-    /// This includes 1 byte for the type, and 80 for the calculator to use as
-    /// it needs.  Some calculators may be smaller than 80 bytes.
-    const LEN: usize = 81;
+    /// This includes 1 byte for the type, and 64 for the calculator to use as
+    /// it needs.  Some calculators may be smaller than 64 bytes.
+    const LEN: usize = 65;
 
     /// Unpacks a byte buffer into a SwapCurve
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![input, 0, 81];
+        let input = array_ref![input, 0, 65];
         #[allow(clippy::ptr_offset_with_cast)]
-        let (curve_type, calculator) = array_refs![input, 1, 80];
+        let (curve_type, calculator) = array_refs![input, 1, 64];
         let curve_type = curve_type[0].try_into()?;
         Ok(Self {
             curve_type,
@@ -288,8 +288,8 @@ impl Pack for SwapCurve {
 
     /// Pack SwapCurve into a byte buffer
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, 81];
-        let (curve_type, calculator) = mut_array_refs![output, 1, 80];
+        let output = array_mut_ref![output, 0, 65];
+        let (curve_type, calculator) = mut_array_refs![output, 1, 64];
         curve_type[0] = self.curve_type as u8;
         self.calculator.pack_into_slice(&mut calculator[..]);
     }

@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_swap_curve_len() {
-        assert_eq!(SwapCurve::LEN, 81);
+        assert_eq!(SwapCurve::LEN, 65);
         assert_eq!(SwapCurve::LEN - 1, RedemptionRateCurve::LEN);
     }
 

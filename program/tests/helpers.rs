@@ -186,7 +186,7 @@ pub async fn fetch_redemption_rate_curve(
 
     let swap_version = SwapVersion::unpack(&account.data).unwrap();
 
-    let mut calculator_dst = vec![0; 80];
+    let mut calculator_dst = vec![0; 64];
     swap_version.swap_curve().calculator.pack_into_slice(&mut calculator_dst);
 
     RedemptionRateCurve::unpack_unchecked(
