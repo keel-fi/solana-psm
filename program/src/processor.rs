@@ -32,25 +32,34 @@ impl Processor {
     pub fn unpack_token_account(
         account_info: &AccountInfo,
         token_program_id: &Pubkey,
+        expected_mint: Option<&Pubkey>,
     ) -> Result<Account, SwapError> {
         if account_info.owner != token_program_id
             && check_spl_token_program_account(account_info.owner).is_err()
         {
             Err(SwapError::IncorrectTokenProgramId)
         } else {
-            StateWithExtensions::<Account>::unpack(&account_info.data.borrow())
+            let account = StateWithExtensions::<Account>::unpack(&account_info.data.borrow())
                 .map(|a| a.base)
-                .map_err(|_| SwapError::ExpectedAccount)
+                .map_err(|_| SwapError::ExpectedAccount)?;
+
+            // optionally check if account is associated with the expected mint
+            if let Some(expected_mint) = expected_mint {
+                if account.mint != *expected_mint {
+                    return Err(SwapError::InvalidAccountMint)
+                }
+            }
+
+            Ok(account)
         }
     }
 
     /// Unpacks a spl_token `Mint`.
+    /// Checks that the account owner is either the SPL‑Token v1 or v2022 program.
     pub fn unpack_mint(
         account_info: &AccountInfo,
-        token_program_id: &Pubkey,
     ) -> Result<Mint, SwapError> {
-        if account_info.owner != token_program_id
-            && check_spl_token_program_account(account_info.owner).is_err()
+        if check_spl_token_program_account(account_info.owner).is_err()
         {
             Err(SwapError::IncorrectTokenProgramId)
         } else {
@@ -61,12 +70,12 @@ impl Processor {
     }
 
     /// Unpacks a spl_token `Mint` with extension data
+    /// Fails if `owner` is not one of the two canonical SPL‑Token program IDs.
     pub fn unpack_mint_with_extensions<'a>(
         account_data: &'a [u8],
         owner: &Pubkey,
-        token_program_id: &Pubkey,
     ) -> Result<StateWithExtensions<'a, Mint>, SwapError> {
-        if owner != token_program_id && check_spl_token_program_account(owner).is_err() {
+        if check_spl_token_program_account(owner).is_err() {
             Err(SwapError::IncorrectTokenProgramId)
         } else {
             StateWithExtensions::<Mint>::unpack(account_data).map_err(|_| SwapError::ExpectedMint)
@@ -257,17 +266,32 @@ impl Processor {
         if *authority_info.key != swap_authority {
             return Err(SwapError::InvalidProgramAddress.into());
         }
-        let token_a = Self::unpack_token_account(token_a_info, &token_program_id)?;
-        let token_b = Self::unpack_token_account(token_b_info, &token_program_id)?;
-        let fee_account = Self::unpack_token_account(fee_account_info, &token_program_id)?;
-        let destination = Self::unpack_token_account(destination_info, &token_program_id)?;
+        let token_a = Self::unpack_token_account(
+            token_a_info, 
+            &token_program_id,
+            Some(token_a_mint_info.key)
+        )?;
+        let token_b = Self::unpack_token_account(
+            token_b_info, 
+            &token_program_id,
+            Some(token_b_mint_info.key)
+        )?;
+        let fee_account = Self::unpack_token_account(
+            fee_account_info, 
+            &token_program_id,
+            Some(pool_mint_info.key)
+        )?;
+        let destination = Self::unpack_token_account(
+            destination_info, 
+            &token_program_id,
+            Some(pool_mint_info.key)
+        )?;
         
         let pool_mint = {
             let pool_mint_data = pool_mint_info.data.borrow();
             let pool_mint = Self::unpack_mint_with_extensions(
                 &pool_mint_data,
                 pool_mint_info.owner,
-                &token_program_id,
             )?;
             validate_mint_extensions(&pool_mint, true)?;
             pool_mint.base
@@ -277,7 +301,6 @@ impl Processor {
         let token_a_mint_state = Self::unpack_mint_with_extensions(
             &token_a_mint_data, 
             token_a_mint_info.owner, 
-            &token_program_id
         )?;
         validate_mint_extensions(&token_a_mint_state, false)?;
 
@@ -285,7 +308,6 @@ impl Processor {
         let token_b_mint_state = Self::unpack_mint_with_extensions(
             &token_b_mint_data, 
             token_b_mint_info.owner, 
-            &token_program_id
         )?;
         validate_mint_extensions(&token_b_mint_state, false)?;
 
@@ -304,6 +326,10 @@ impl Processor {
             ], 
             program_id
         );
+
+        if swap_info.owner != program_id {
+            return Err(ProgramError::InvalidAccountOwner)
+        }
 
         // Reject if destination is not owned by PDA
         if destination_owner_pda != destination.owner {
@@ -499,11 +525,17 @@ impl Processor {
             return Err(SwapError::IncorrectTokenProgramId.into());
         }
 
-        let source_account =
-            Self::unpack_token_account(swap_source_info, token_swap.token_program_id())?;
-        let dest_account =
-            Self::unpack_token_account(swap_destination_info, token_swap.token_program_id())?;
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
+        let source_account =  Self::unpack_token_account(
+            swap_source_info, 
+            token_swap.token_program_id(),
+            Some(source_token_mint_info.key)
+        )?;
+        let dest_account = Self::unpack_token_account(
+            swap_destination_info, 
+            token_swap.token_program_id(),
+            Some(destination_token_mint_info.key)
+        )?;
+        let pool_mint = Self::unpack_mint(pool_mint_info)?;
 
         // Calculate the trade amounts
         let trade_direction = if *swap_source_info.key == *token_swap.token_a_account() {
@@ -531,7 +563,6 @@ impl Processor {
             let source_mint = Self::unpack_mint_with_extensions(
                 &source_mint_data,
                 source_token_mint_info.owner,
-                token_swap.token_program_id(),
             )?;
 
             (source_amount_swapped, source_mint.base.decimals)
@@ -542,7 +573,6 @@ impl Processor {
             let destination_mint = Self::unpack_mint_with_extensions(
                 &destination_mint_data,
                 destination_token_mint_info.owner,
-                token_swap.token_program_id(),
             )?;
             let amount_out = to_u64(result.destination_amount_swapped)?;
             if amount_out < minimum_amount_out {
@@ -608,13 +638,13 @@ impl Processor {
 
             // Allow error to fall through
             if let Ok(host_fee_account_info) = next_account_info(account_info_iter) {
-                let host_fee_account = Self::unpack_token_account(
+                // unpack it in order to verify it is associated to pool_mint_info
+                let _ = Self::unpack_token_account(
                     host_fee_account_info,
                     token_swap.token_program_id(),
+                    Some(pool_mint_info.key)
                 )?;
-                if *pool_mint_info.key != host_fee_account.mint {
-                    return Err(SwapError::IncorrectPoolMint.into());
-                }
+
                 let host_fee = token_swap
                     .fees()
                     .host_fee(pool_token_amount)
@@ -708,9 +738,17 @@ impl Processor {
             None,
         )?;
 
-        let token_a = Self::unpack_token_account(token_a_info, token_swap.token_program_id())?;
-        let token_b = Self::unpack_token_account(token_b_info, token_swap.token_program_id())?;
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
+        let token_a = Self::unpack_token_account(
+            token_a_info, 
+            token_swap.token_program_id(),
+            Some(token_a_mint_info.key)
+        )?;
+        let token_b = Self::unpack_token_account(
+            token_b_info, 
+            token_swap.token_program_id(),
+            Some(token_b_mint_info.key)
+        )?;
+        let pool_mint = Self::unpack_mint(pool_mint_info)?;
         
         let pool_mint_supply = u128::from(pool_mint.supply);
         let pool_token_amount = u128::from(pool_token_amount);
@@ -754,7 +792,7 @@ impl Processor {
             user_transfer_authority_info.clone(),
             token_swap.bump_seed(),
             token_a_amount,
-            Self::unpack_mint(token_a_mint_info, token_swap.token_program_id())?.decimals,
+            Self::unpack_mint(token_a_mint_info)?.decimals,
         )?;
         Self::token_transfer(
             swap_info.key,
@@ -765,7 +803,7 @@ impl Processor {
             user_transfer_authority_info.clone(),
             token_swap.bump_seed(),
             token_b_amount,
-            Self::unpack_mint(token_b_mint_info, token_swap.token_program_id())?.decimals,
+            Self::unpack_mint(token_b_mint_info)?.decimals,
         )?;
         Self::token_mint_to(
             swap_info.key,
@@ -820,9 +858,17 @@ impl Processor {
             Some(pool_fee_account_info),
         )?;
 
-        let token_a = Self::unpack_token_account(token_a_info, token_swap.token_program_id())?;
-        let token_b = Self::unpack_token_account(token_b_info, token_swap.token_program_id())?;
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
+        let token_a = Self::unpack_token_account(
+            token_a_info, 
+            token_swap.token_program_id(),
+            Some(token_a_mint_info.key)
+        )?;
+        let token_b = Self::unpack_token_account(
+            token_b_info, 
+            token_swap.token_program_id(),
+            Some(token_b_mint_info.key)
+        )?;
+        let pool_mint = Self::unpack_mint(pool_mint_info)?;
 
         let calculator = &token_swap.swap_curve().calculator;
 
@@ -903,7 +949,7 @@ impl Processor {
                 authority_info.clone(),
                 token_swap.bump_seed(),
                 token_a_amount,
-                Self::unpack_mint(token_a_mint_info, token_swap.token_program_id())?.decimals,
+                Self::unpack_mint(token_a_mint_info)?.decimals,
             )?;
         }
         if token_b_amount > 0 {
@@ -916,7 +962,7 @@ impl Processor {
                 authority_info.clone(),
                 token_swap.bump_seed(),
                 token_b_amount,
-                Self::unpack_mint(token_b_mint_info, token_swap.token_program_id())?.decimals,
+                Self::unpack_mint(token_b_mint_info)?.decimals,
             )?;
         }
         Ok(())
@@ -950,12 +996,21 @@ impl Processor {
         if !calculator.allows_deposits() {
             return Err(SwapError::UnsupportedCurveOperation.into());
         }
-        let source_account =
-            Self::unpack_token_account(source_info, token_swap.token_program_id())?;
-        let swap_token_a =
-            Self::unpack_token_account(swap_token_a_info, token_swap.token_program_id())?;
-        let swap_token_b =
-            Self::unpack_token_account(swap_token_b_info, token_swap.token_program_id())?;
+        let source_account = Self::unpack_token_account(
+            source_info, 
+            token_swap.token_program_id(),
+            None
+        )?;
+        let swap_token_a = Self::unpack_token_account(
+            swap_token_a_info, 
+            token_swap.token_program_id(),
+            Some(token_swap.token_a_mint())
+        )?;
+        let swap_token_b = Self::unpack_token_account(
+            swap_token_b_info, 
+            token_swap.token_program_id(),
+            Some(token_swap.token_b_mint())
+        )?;
 
         let trade_direction = if source_account.mint == swap_token_a.mint {
             TradeDirection::AtoB
@@ -984,7 +1039,7 @@ impl Processor {
             pool_fee_account_info,
         )?;
 
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
+        let pool_mint = Self::unpack_mint(pool_mint_info)?;
         let mut pool_mint_supply = u128::from(pool_mint.supply);
 
         let mut swap_token_a_amount = u128::from(swap_token_a.amount);
@@ -1049,11 +1104,13 @@ impl Processor {
             if owner_fee_pool > 0 {
                 // if host_fee_account_info is provided, we process host fees and substract from `owner_fee_pool`
                 if let Some(host_fee_account_info) = host_fee_account_info {
-                    if *pool_mint_info.key
-                        != Self::unpack_token_account(host_fee_account_info, token_swap.token_program_id())?.mint
-                    {
-                        return Err(SwapError::InvalidHostFeeMint.into());
-                    }
+
+                    // unpack it in order to validater mint
+                    let _ = Self::unpack_token_account(
+                        host_fee_account_info, 
+                        token_swap.token_program_id(),
+                        Some(pool_mint_info.key)
+                    )?;
 
                     let host_fee = token_swap
                         .fees()
@@ -1106,7 +1163,7 @@ impl Processor {
                     user_transfer_authority_info.clone(),
                     token_swap.bump_seed(),
                     source_token_amount,
-                    Self::unpack_mint(source_token_mint_info, token_swap.token_program_id())?
+                    Self::unpack_mint(source_token_mint_info)?
                         .decimals,
                 )?;
             }
@@ -1120,8 +1177,7 @@ impl Processor {
                     user_transfer_authority_info.clone(),
                     token_swap.bump_seed(),
                     source_token_amount,
-                    Self::unpack_mint(source_token_mint_info, token_swap.token_program_id())?
-                        .decimals,
+                    Self::unpack_mint(source_token_mint_info)?.decimals,
                 )?;
             }
         }
@@ -1163,12 +1219,21 @@ impl Processor {
         let host_fee_account_info     = account_info_iter.next();
 
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
-        let destination_account =
-            Self::unpack_token_account(destination_info, token_swap.token_program_id())?;
-        let swap_token_a =
-            Self::unpack_token_account(swap_token_a_info, token_swap.token_program_id())?;
-        let swap_token_b =
-            Self::unpack_token_account(swap_token_b_info, token_swap.token_program_id())?;
+        let destination_account = Self::unpack_token_account(
+            destination_info, 
+            token_swap.token_program_id(),
+            Some(destination_token_mint_info.key)
+        )?;
+        let swap_token_a = Self::unpack_token_account(
+            swap_token_a_info, 
+            token_swap.token_program_id(),
+            Some(token_swap.token_a_mint())
+        )?;
+        let swap_token_b = Self::unpack_token_account(
+            swap_token_b_info, 
+            token_swap.token_program_id(),
+            Some(token_swap.token_b_mint())
+        )?;
 
         let trade_direction = if destination_account.mint == swap_token_a.mint {
             TradeDirection::AtoB
@@ -1196,7 +1261,7 @@ impl Processor {
             Some(pool_fee_account_info),
         )?;
 
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
+        let pool_mint = Self::unpack_mint(pool_mint_info)?;
         let mut pool_mint_supply = u128::from(pool_mint.supply);
         let mut swap_token_a_amount = u128::from(swap_token_a.amount);
         let mut swap_token_b_amount = u128::from(swap_token_b.amount);
@@ -1266,11 +1331,12 @@ impl Processor {
 
             if owner_fee_pool > 0 {
                 if let Some(host_account_info) = host_fee_account_info {
-                    if *pool_mint_info.key
-                        != Self::unpack_token_account(host_account_info, token_swap.token_program_id())?.mint
-                    {
-                        return Err(SwapError::InvalidHostFeeMint.into());
-                    }
+                    // unpack it to validate mint
+                    let _ = Self::unpack_token_account(
+                        host_account_info, 
+                        token_swap.token_program_id(),
+                        Some(pool_mint_info.key)
+                    )?;
 
                     let host_fee = token_swap
                         .fees()
@@ -1352,7 +1418,7 @@ impl Processor {
                     authority_info.clone(),
                     token_swap.bump_seed(),
                     destination_token_amount,
-                    Self::unpack_mint(destination_token_mint_info, token_swap.token_program_id())?
+                    Self::unpack_mint(destination_token_mint_info)?
                         .decimals,
                 )?;
             }
@@ -1366,7 +1432,7 @@ impl Processor {
                     authority_info.clone(),
                     token_swap.bump_seed(),
                     destination_token_amount,
-                    Self::unpack_mint(destination_token_mint_info, token_swap.token_program_id())?
+                    Self::unpack_mint(destination_token_mint_info)?
                         .decimals,
                 )?;
             }
@@ -3009,7 +3075,7 @@ mod tests {
             let old_account = accounts.pool_fee_account;
             accounts.pool_fee_account = pool_fee_account;
             assert_eq!(
-                Err(SwapError::IncorrectPoolMint.into()),
+                Err(SwapError::InvalidAccountMint.into()),
                 accounts.initialize_swap()
             );
             accounts.pool_fee_account = old_account;
@@ -3208,10 +3274,11 @@ mod tests {
                 &accounts.authority_key,
                 10,
             );
+            
             let old_account = accounts.token_b_account;
             accounts.token_b_account = token_a_repeat_account;
             assert_eq!(
-                Err(SwapError::RepeatedMint.into()),
+                Err(SwapError::InvalidAccountMint.into()),
                 accounts.initialize_swap()
             );
             accounts.token_b_account = old_account;
@@ -7595,7 +7662,7 @@ mod tests {
                 fees: &fees,
             });
             assert_eq!(
-                Err(SwapError::IncorrectPoolMint.into()),
+                Err(SwapError::InvalidAccountMint.into()),
                 do_process_instruction_with_fee_constraints(
                     swap(
                         &SWAP_PROGRAM_ID,
