@@ -69,7 +69,7 @@ export const TokenSwapLayout = struct<RawTokenSwap>([
   u64('hostFeeNumerator'),
   u64('hostFeeDenominator'),
   u8('curveType'),
-  blob(80, 'curveParameters'),
+  blob(64, 'curveParameters'),
 ]);
 
 export interface CreateInstruction {
@@ -282,15 +282,15 @@ export class TokenSwap {
       u64('hostFeeNumerator'),
       u64('hostFeeDenominator'),
       u8('curveType'),
-      blob(80, 'curveParameters'),
+      blob(64, 'curveParameters'),
     ]);
     let data = Buffer.alloc(1024);
 
     // package curve parameters
     // NOTE: currently assume all curves take a single parameter, u64 int
     //       the remaining 24 of the 32 bytes available are filled with 0s
-    // NOTE: updated to use 80 bytes for new RedemptionRateCurve
-    const curveParamsBuffer = Buffer.alloc(80);
+    // NOTE: updated to use 64 bytes for new RedemptionRateCurve
+    const curveParamsBuffer = Buffer.alloc(64);
     Buffer.from(curveParameters).copy(curveParamsBuffer);
 
     {
