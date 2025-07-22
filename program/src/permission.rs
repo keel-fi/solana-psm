@@ -20,6 +20,8 @@ use crate::{error::SwapError, ID as PROGRAM_ID};
 /// Permission struct that allows a more flexiple permission system
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Permission {
+    /// Boolean set to true agter a Permission is created
+    pub is_initialized: bool,
     /// The Swap account address
     pub swap: Pubkey,
     /// The pubkey that is granted these permissions and must sign relevant instructions
@@ -32,22 +34,24 @@ pub struct Permission {
 
 impl IsInitialized for Permission {
     fn is_initialized(&self) -> bool {
-        true
+        self.is_initialized
     }
 }
 
 impl Sealed for Permission {}
 
 impl Pack for Permission {
-    const LEN: usize = 66;
+    const LEN: usize = 67;
 
     fn unpack_from_slice(input: &[u8]) -> Result<Permission, ProgramError> {
-        let swap = array_ref![input, 0, 32];
-        let authority = array_ref![input, 32, 32];
-        let is_super_admin = array_ref![input, 64, 1];
-        let can_update_parameters = array_ref![input, 65, 1];
+        let is_initialized = array_ref![input, 0, 1];
+        let swap = array_ref![input, 1, 32];
+        let authority = array_ref![input, 33, 32];
+        let is_super_admin = array_ref![input, 65, 1];
+        let can_update_parameters = array_ref![input, 66, 1];
 
         Ok(Self {
+            is_initialized: is_initialized[0] != 0,
             swap: Pubkey::new_from_array(*swap),
             authority: Pubkey::new_from_array(*authority),
             is_super_admin: is_super_admin[0] != 0,
@@ -56,11 +60,13 @@ impl Pack for Permission {
     }
 
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let (swap, rest) = output.split_at_mut(32);
+        let (is_initialized, rest) = output.split_at_mut(1);
+        let (swap, rest) = rest.split_at_mut(32);
         let (authority, rest) = rest.split_at_mut(32);
         let (is_super_admin, rest) = rest.split_at_mut(1);
         let (can_update_parameters, _) = rest.split_at_mut(1);
 
+        is_initialized[0] = self.is_initialized as u8;
         swap.copy_from_slice(&self.swap.to_bytes());
         authority.copy_from_slice(&self.authority.to_bytes());
         is_super_admin[0] = self.is_super_admin as u8;
@@ -150,7 +156,9 @@ impl Permission {
     }
 
     /// creates the permission account, based of the swap and authority
+    /// reverts if the accounts is initialized
     pub fn create_permission_account<'a>(
+        program_id: &Pubkey,
         payer: AccountInfo<'a>,
         permission_account: AccountInfo<'a>,
         system_program: AccountInfo<'a>,
@@ -169,6 +177,14 @@ impl Permission {
 
         if *system_program.key != SYSTEM_PROGRAM_ID {
             return Err(ProgramError::IncorrectProgramId)
+        }
+
+        // If it is owned by nova PSM and is initialized, we revert
+        if permission_account.owner == program_id {
+            let existing_permission = Permission::unpack_unchecked(&permission_account.data.borrow())?;
+            if existing_permission.is_initialized {
+                return Err(ProgramError::AccountAlreadyInitialized)
+            }
         }
 
         let rent = Rent::get()?;
@@ -298,20 +314,22 @@ pub fn process_initialize_permission(
 
     permission.validate_super_admin_permission()?;
 
-    let new_permission = Permission {
-        swap: *swap_info.key,
-        authority: permission_authority,
-        is_super_admin,
-        can_update_parameters
-    };
-
     Permission::create_permission_account(
+        program_id,
         payer_info.clone(), 
         new_permission_info.clone(), 
         system_program_info.clone(), 
         swap_info.key, 
         &permission_authority
     )?;
+
+    let new_permission = Permission {
+        is_initialized: true,
+        swap: *swap_info.key,
+        authority: permission_authority,
+        is_super_admin,
+        can_update_parameters
+    };
 
     Permission::pack(new_permission, &mut new_permission_info.data.borrow_mut())?;
 
@@ -364,6 +382,7 @@ pub fn process_update_permission(
     }
 
     let updated_values = Permission {
+        is_initialized: update_permission.is_initialized,
         swap: update_permission.swap,
         authority: update_permission.authority,
         is_super_admin,
