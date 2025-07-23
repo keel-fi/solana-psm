@@ -1604,7 +1604,7 @@ mod tests {
                 calculator::{CurveCalculator, INITIAL_SWAP_POOL_AMOUNT},
                 constant_price::ConstantPriceCurve,
                 constant_product::ConstantProductCurve,
-                offset::OffsetCurve,
+                offset::OffsetCurve, redemption_rate::RAY,
             },
             instruction::{
                 deposit_all_token_types, deposit_single_token_type_exact_amount_in, initialize,
@@ -6720,10 +6720,11 @@ mod tests {
             &token_b_program_id,
         );
         let token_b_price = 1;
+        let scaled_token_b_price = token_b_price * RAY;
         check_valid_swap_curve(
             fees.clone(),
             CurveType::ConstantPrice,
-            Arc::new(ConstantPriceCurve { token_b_price }),
+            Arc::new(ConstantPriceCurve { token_b_price: scaled_token_b_price }),
             token_a_amount,
             token_b_amount,
             &pool_token_program_id,
@@ -6785,12 +6786,13 @@ mod tests {
             &token_b_program_id,
         );
         let token_b_price = 10_000;
+        let scaled_token_b_price = (token_b_price) * RAY;
         check_valid_swap_curve(
             fees.clone(),
             CurveType::ConstantPrice,
-            Arc::new(ConstantPriceCurve { token_b_price }),
+            Arc::new(ConstantPriceCurve { token_b_price: scaled_token_b_price }),
             token_a_amount,
-            token_b_amount / token_b_price,
+            token_b_amount / (token_b_price as u64),
             &pool_token_program_id,
             &token_a_program_id,
             &token_b_program_id,
@@ -7992,7 +7994,9 @@ mod tests {
         //   * B: 1 000 units (worth 2 000 000 each)
         let swap_token_a_amount = 1_000_000_000;
         let swap_token_b_amount = 1_000;
-        let token_b_price = 2_000_000;
+        let token_b_price = 2_000_000 as u64;
+        let scaled_token_b_price = (token_b_price as u128) * RAY;
+
         let fees = Fees {
             trade_fee_numerator,
             trade_fee_denominator,
@@ -8006,7 +8010,7 @@ mod tests {
 
         let swap_curve = SwapCurve {
             curve_type: CurveType::ConstantPrice,
-            calculator: Arc::new(ConstantPriceCurve { token_b_price }),
+            calculator: Arc::new(ConstantPriceCurve { token_b_price: scaled_token_b_price }),
         };
         let total_pool = swap_curve.calculator.new_pool_supply();
         let user_key = Pubkey::new_unique();
