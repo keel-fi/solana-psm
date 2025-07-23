@@ -901,21 +901,28 @@ impl Processor {
                 RoundDirection::Floor,
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
+        
         let token_a_amount = to_u64(results.token_a_amount)?;
         let token_a_amount = std::cmp::min(token_a.amount, token_a_amount);
         if token_a_amount < minimum_token_a_amount {
             return Err(SwapError::ExceededSlippage.into());
         }
-        if token_a_amount == 0 && token_a.amount != 0 {
-            return Err(SwapError::ZeroTradingTokens.into());
-        }
+        
         let token_b_amount = to_u64(results.token_b_amount)?;
         let token_b_amount = std::cmp::min(token_b.amount, token_b_amount);
         if token_b_amount < minimum_token_b_amount {
             return Err(SwapError::ExceededSlippage.into());
         }
-        if token_b_amount == 0 && token_b.amount != 0 {
-            return Err(SwapError::ZeroTradingTokens.into());
+        
+
+        if token_swap.swap_curve().curve_type == CurveType::ConstantProduct {
+            if token_a_amount == 0 && token_a.amount != 0 {
+                return Err(SwapError::ZeroTradingTokens.into());
+            }
+
+            if token_b_amount == 0 && token_b.amount != 0 {
+                return Err(SwapError::ZeroTradingTokens.into());
+            }
         }
 
         if withdraw_fee > 0 {
