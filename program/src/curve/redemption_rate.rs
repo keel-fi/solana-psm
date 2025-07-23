@@ -1416,7 +1416,6 @@ mod tests {
                 swap_token_a_amount,
                 swap_token_b_amount,
                 TradeDirection::AtoB,
-                // TODO see why this needs to be so high
                 CONVERSION_BASIS_POINTS_GUARANTEE,
                 Some(0)
             );
@@ -1427,7 +1426,6 @@ mod tests {
                 swap_token_a_amount,
                 swap_token_b_amount,
                 TradeDirection::BtoA,
-                // TODO see why this needs to be so high
                 CONVERSION_BASIS_POINTS_GUARANTEE,
                 Some(0)
             );

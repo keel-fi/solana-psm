@@ -294,7 +294,7 @@ impl Pack for SwapV1 {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::curve::offset::OffsetCurve, std::convert::TryInto};
+    use {super::*, crate::curve::{constant_price::ConstantPriceCurve, offset::OffsetCurve, redemption_rate::RAY}, std::convert::TryInto};
 
     const TEST_FEES: Fees = Fees {
         trade_fee_numerator: 1,
@@ -321,6 +321,50 @@ mod tests {
     const TEST_CURVE: OffsetCurve = OffsetCurve {
         token_b_offset: TEST_TOKEN_B_OFFSET,
     };
+
+    #[test]
+    fn swap_version_pack_constant_price() {
+        let curve_type = 1.try_into().unwrap();
+        let scaled_price = 1 * RAY;
+        let curve = ConstantPriceCurve {
+            token_b_price: scaled_price
+        };
+
+        let calculator = Arc::new(curve);
+        let swap_curve = SwapCurve {
+            curve_type,
+            calculator,
+        };
+        let swap_info = SwapVersion::SwapV1(SwapV1 {
+            is_initialized: true,
+            bump_seed: TEST_BUMP_SEED,
+            token_program_id: TEST_TOKEN_PROGRAM_ID,
+            token_a: TEST_TOKEN_A,
+            token_b: TEST_TOKEN_B,
+            pool_mint: TEST_POOL_MINT,
+            token_a_mint: TEST_TOKEN_A_MINT,
+            token_b_mint: TEST_TOKEN_B_MINT,
+            pool_fee_account: TEST_POOL_FEE_ACCOUNT,
+            fees: TEST_FEES,
+            swap_curve: swap_curve.clone(),
+        });
+
+        let mut packed = [0u8; SwapVersion::LATEST_LEN];
+        SwapVersion::pack(swap_info, &mut packed).unwrap();
+        let unpacked = SwapVersion::unpack(&packed).unwrap();
+
+        assert!(unpacked.is_initialized());
+        assert_eq!(unpacked.bump_seed(), TEST_BUMP_SEED);
+        assert_eq!(*unpacked.token_program_id(), TEST_TOKEN_PROGRAM_ID);
+        assert_eq!(*unpacked.token_a_account(), TEST_TOKEN_A);
+        assert_eq!(*unpacked.token_b_account(), TEST_TOKEN_B);
+        assert_eq!(*unpacked.pool_mint(), TEST_POOL_MINT);
+        assert_eq!(*unpacked.token_a_mint(), TEST_TOKEN_A_MINT);
+        assert_eq!(*unpacked.token_b_mint(), TEST_TOKEN_B_MINT);
+        assert_eq!(*unpacked.pool_fee_account(), TEST_POOL_FEE_ACCOUNT);
+        assert_eq!(*unpacked.fees(), TEST_FEES);
+        assert_eq!(*unpacked.swap_curve(), swap_curve);
+    }
 
     #[test]
     fn swap_version_pack() {
@@ -359,6 +403,69 @@ mod tests {
         assert_eq!(*unpacked.pool_fee_account(), TEST_POOL_FEE_ACCOUNT);
         assert_eq!(*unpacked.fees(), TEST_FEES);
         assert_eq!(*unpacked.swap_curve(), swap_curve);
+    }
+
+    #[test]
+    fn swap_v1_pack_constant_price() {
+        let constant_price_curve_type = 1;
+        let curve_type = constant_price_curve_type.try_into().unwrap();
+        let scaled_price = 1 * RAY;
+        let curve = ConstantPriceCurve {
+            token_b_price: scaled_price
+        };
+
+        let calculator = Arc::new(curve);
+        let swap_curve = SwapCurve {
+            curve_type,
+            calculator,
+        };
+        let swap_info = SwapV1 {
+            is_initialized: true,
+            bump_seed: TEST_BUMP_SEED,
+            token_program_id: TEST_TOKEN_PROGRAM_ID,
+            token_a: TEST_TOKEN_A,
+            token_b: TEST_TOKEN_B,
+            pool_mint: TEST_POOL_MINT,
+            token_a_mint: TEST_TOKEN_A_MINT,
+            token_b_mint: TEST_TOKEN_B_MINT,
+            pool_fee_account: TEST_POOL_FEE_ACCOUNT,
+            fees: TEST_FEES,
+            swap_curve,
+        };
+
+        let mut packed = [0u8; SwapV1::LEN];
+        SwapV1::pack_into_slice(&swap_info, &mut packed);
+        let unpacked = SwapV1::unpack(&packed).unwrap();
+        assert_eq!(swap_info, unpacked);
+
+        let mut packed = vec![1u8, TEST_BUMP_SEED];
+        packed.extend_from_slice(&TEST_TOKEN_PROGRAM_ID.to_bytes());
+        packed.extend_from_slice(&TEST_TOKEN_A.to_bytes());
+        packed.extend_from_slice(&TEST_TOKEN_B.to_bytes());
+        packed.extend_from_slice(&TEST_POOL_MINT.to_bytes());
+        packed.extend_from_slice(&TEST_TOKEN_A_MINT.to_bytes());
+        packed.extend_from_slice(&TEST_TOKEN_B_MINT.to_bytes());
+        packed.extend_from_slice(&TEST_POOL_FEE_ACCOUNT.to_bytes());
+        packed.extend_from_slice(&TEST_FEES.trade_fee_numerator.to_le_bytes());
+        packed.extend_from_slice(&TEST_FEES.trade_fee_denominator.to_le_bytes());
+        packed.extend_from_slice(&TEST_FEES.owner_trade_fee_numerator.to_le_bytes());
+        packed.extend_from_slice(&TEST_FEES.owner_trade_fee_denominator.to_le_bytes());
+        packed.extend_from_slice(&TEST_FEES.owner_withdraw_fee_numerator.to_le_bytes());
+        packed.extend_from_slice(&TEST_FEES.owner_withdraw_fee_denominator.to_le_bytes());
+        packed.extend_from_slice(&TEST_FEES.host_fee_numerator.to_le_bytes());
+        packed.extend_from_slice(&TEST_FEES.host_fee_denominator.to_le_bytes());
+        packed.push(constant_price_curve_type);
+        packed.extend_from_slice(&scaled_price.to_le_bytes());
+        packed.extend_from_slice(&[0u8; 48]);
+        let unpacked = SwapV1::unpack(&packed).unwrap();
+        assert_eq!(swap_info, unpacked);
+
+        let packed = [0u8; SwapV1::LEN];
+        let swap_info: SwapV1 = Default::default();
+        let unpack_unchecked = SwapV1::unpack_unchecked(&packed).unwrap();
+        assert_eq!(unpack_unchecked, swap_info);
+        let err = SwapV1::unpack(&packed).unwrap_err();
+        assert_eq!(err, ProgramError::UninitializedAccount);
     }
 
     #[test]
