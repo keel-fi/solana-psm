@@ -70,12 +70,12 @@ const OWNER_KEY: Option<&str> = option_env!("SWAP_PROGRAM_OWNER_FEE_ADDRESS");
 const FEES: &Fees = &Fees {
     trade_fee_numerator: 0,
     trade_fee_denominator: 10000,
-    owner_trade_fee_numerator: 5,
+    owner_trade_fee_numerator: 0,
     owner_trade_fee_denominator: 10000,
     owner_withdraw_fee_numerator: 0,
-    owner_withdraw_fee_denominator: 0,
-    host_fee_numerator: 20,
-    host_fee_denominator: 100,
+    owner_withdraw_fee_denominator: 10000,
+    host_fee_numerator: 0,
+    host_fee_denominator: 10000,
 };
 #[cfg(feature = "production")]
 const VALID_CURVE_TYPES: &[CurveType] = &[
