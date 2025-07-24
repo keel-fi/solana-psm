@@ -20,7 +20,7 @@ use crate::{error::SwapError, ID as PROGRAM_ID};
 /// Permission struct that allows a more flexiple permission system
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Permission {
-    /// Boolean set to true agter a Permission is created
+    /// Boolean set to true after a Permission is created
     pub is_initialized: bool,
     /// The Swap account address
     pub swap: Pubkey,
