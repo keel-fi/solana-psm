@@ -104,18 +104,6 @@ impl CurveCalculator for ConstantPriceCurve {
                 }
 
                 (source_amount_used, destination_amount)
-
-                // let mut source_amount_swapped = source_amount;
-
-                // // if there is a remainder from buying token B, floor
-                // // token_a_amount to avoid taking too many tokens, but
-                // // don't recalculate the fees
-                // let remainder = source_amount_swapped.checked_rem(token_b_price)?;
-                // if remainder > U256::zero() {
-                //     source_amount_swapped = source_amount.checked_sub(remainder)?;
-                // }
-
-                // (source_amount_swapped, destination_amount_swapped)
             }
         };
 
