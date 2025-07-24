@@ -31,11 +31,9 @@ impl Processor {
     /// Unpacks a spl_token `Account`.
     pub fn unpack_token_account(
         account_info: &AccountInfo,
-        token_program_id: &Pubkey,
         expected_mint: Option<&Pubkey>,
     ) -> Result<Account, SwapError> {
-        if account_info.owner != token_program_id
-            && check_spl_token_program_account(account_info.owner).is_err()
+        if check_spl_token_program_account(account_info.owner).is_err()
         {
             Err(SwapError::IncorrectTokenProgramId)
         } else {
@@ -268,22 +266,18 @@ impl Processor {
         }
         let token_a = Self::unpack_token_account(
             token_a_info, 
-            &token_program_id,
             Some(token_a_mint_info.key)
         )?;
         let token_b = Self::unpack_token_account(
             token_b_info, 
-            &token_program_id,
             Some(token_b_mint_info.key)
         )?;
         let fee_account = Self::unpack_token_account(
             fee_account_info, 
-            &token_program_id,
             Some(pool_mint_info.key)
         )?;
         let destination = Self::unpack_token_account(
             destination_info, 
-            &token_program_id,
             Some(pool_mint_info.key)
         )?;
         
@@ -530,12 +524,10 @@ impl Processor {
 
         let source_account =  Self::unpack_token_account(
             swap_source_info, 
-            token_swap.token_program_id(),
             Some(source_token_mint_info.key)
         )?;
         let dest_account = Self::unpack_token_account(
             swap_destination_info, 
-            token_swap.token_program_id(),
             Some(destination_token_mint_info.key)
         )?;
         let pool_mint = Self::unpack_mint(pool_mint_info)?;
@@ -643,7 +635,6 @@ impl Processor {
                 // unpack it in order to verify it is associated to pool_mint_info
                 let _ = Self::unpack_token_account(
                     host_fee_account_info,
-                    token_swap.token_program_id(),
                     Some(pool_mint_info.key)
                 )?;
 
@@ -742,12 +733,10 @@ impl Processor {
 
         let token_a = Self::unpack_token_account(
             token_a_info, 
-            token_swap.token_program_id(),
             Some(token_a_mint_info.key)
         )?;
         let token_b = Self::unpack_token_account(
             token_b_info, 
-            token_swap.token_program_id(),
             Some(token_b_mint_info.key)
         )?;
         let pool_mint = Self::unpack_mint(pool_mint_info)?;
@@ -862,12 +851,10 @@ impl Processor {
 
         let token_a = Self::unpack_token_account(
             token_a_info, 
-            token_swap.token_program_id(),
             Some(token_a_mint_info.key)
         )?;
         let token_b = Self::unpack_token_account(
             token_b_info, 
-            token_swap.token_program_id(),
             Some(token_b_mint_info.key)
         )?;
         let pool_mint = Self::unpack_mint(pool_mint_info)?;
@@ -1007,17 +994,14 @@ impl Processor {
         }
         let source_account = Self::unpack_token_account(
             source_info, 
-            token_swap.token_program_id(),
             None
         )?;
         let swap_token_a = Self::unpack_token_account(
             swap_token_a_info, 
-            token_swap.token_program_id(),
             Some(token_swap.token_a_mint())
         )?;
         let swap_token_b = Self::unpack_token_account(
             swap_token_b_info, 
-            token_swap.token_program_id(),
             Some(token_swap.token_b_mint())
         )?;
 
@@ -1117,7 +1101,6 @@ impl Processor {
                     // unpack it in order to validater mint
                     let _ = Self::unpack_token_account(
                         host_fee_account_info, 
-                        token_swap.token_program_id(),
                         Some(pool_mint_info.key)
                     )?;
 
@@ -1230,17 +1213,14 @@ impl Processor {
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
         let destination_account = Self::unpack_token_account(
             destination_info, 
-            token_swap.token_program_id(),
             Some(destination_token_mint_info.key)
         )?;
         let swap_token_a = Self::unpack_token_account(
             swap_token_a_info, 
-            token_swap.token_program_id(),
             Some(token_swap.token_a_mint())
         )?;
         let swap_token_b = Self::unpack_token_account(
             swap_token_b_info, 
-            token_swap.token_program_id(),
             Some(token_swap.token_b_mint())
         )?;
 
@@ -1343,7 +1323,6 @@ impl Processor {
                     // unpack it to validate mint
                     let _ = Self::unpack_token_account(
                         host_account_info, 
-                        token_swap.token_program_id(),
                         Some(pool_mint_info.key)
                     )?;
 
