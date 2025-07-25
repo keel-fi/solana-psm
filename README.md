@@ -4,7 +4,7 @@ This repository contains the implementation of a PSM (Peg Stability Module) for 
 
 The SPL Token Swap functionality facilitates swapping between any two SPL Tokens, which can be facilitated through a choice of curves. `ConstantProduct`, `ConstantPrice` and `Offset` curves are supported in the original implementation, but are not anticipated to be required initially. 
 
-This implementation extends the range of curves offered to include a new `RedemptionRate` curve type, modeled on the functionality within [PSM3.sol](https://github.com/sparkdotfi/spark-psm/blob/master/src/PSM3.sol) and the corresponding `RateProvider` implementation for EVM, but adapted for the nuissances of Solana and the SVM. As such, the this program also includes equivalent functionality associated with the  `RateProvider` contract in Spark's EVM implementation.
+This implementation extends the range of curves offered to include a new `RedemptionRate` curve type, modeled on the functionality within [PSM3.sol](https://github.com/sparkdotfi/spark-psm/blob/master/src/PSM3.sol) and the corresponding `RateProvider` implementation for EVM, but adapted for the nuissances of Solana and the SVM. As such, this program also includes equivalent functionality associated with the  `RateProvider` contract in Spark's EVM implementation.
 
 The `RedemptionRate` curve is intended to support the conversion of Solana USDS to Solana sUSDS (Savings USDS) and subsequent redemption, although it could be used to support similar functionality for any pair of tokens that follows a similar approach and can provide similarly described redemption rate configurations.
 
