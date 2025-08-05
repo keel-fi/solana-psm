@@ -159,7 +159,7 @@ pub enum SwapInstruction {
     /// *Extra accounts for `RedemptionRateCurve`:*
     /// 
     ///  10.  `[writable]` Permission account to be created.
-    ///  11.  `[]` Authority pubkey, linked to Permission account. Will be super-admin.
+    ///  11.  `[]` Super admin pubkey, linked to Permission account.
     ///  12.  `[signer, writable]` Payer (funds `create_account` for the permission account).
     ///  13.  `[]` System program id.
     Initialize(Initialize),
