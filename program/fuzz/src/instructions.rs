@@ -6,7 +6,7 @@ use {
     honggfuzz::fuzz,
     spl_math::precise_number::PreciseNumber,
     spl_token::error::TokenError,
-    nova_psm::{
+    solana_psm::{
         curve::{
             base::{CurveType, SwapCurve},
             calculator::TradeDirection,
@@ -22,7 +22,7 @@ use {
             WithdrawSingleTokenTypeExactAmountOut,
         },
     },
-    nova_psm_fuzz::{
+    solana_psm_fuzz::{
         native_account_data::NativeAccountData,
         native_token::{get_token_balance, transfer},
         native_token_swap::NativeTokenSwap,
@@ -483,7 +483,6 @@ fn get_swap_curve(curve_type: CurveType) -> SwapCurve {
                 token_b_offset: 100_000_000_000,
             }),
             CurveType::RedemptionRateCurve => Arc::new(RedemptionRateCurve {
-                ray: RAY,
                 max_ssr: 0,
                 ssr: RAY,
                 rho: 0,

@@ -49,7 +49,7 @@ impl program_stubs::SyscallStubs for TestSyscallStubs {
                     let mut new_account_info = account_info.clone();
                     for seeds in signers_seeds.iter() {
                         let signer =
-                            Pubkey::create_program_address(seeds, &nova_psm::id()).unwrap();
+                            Pubkey::create_program_address(seeds, &solana_psm::id()).unwrap();
                         if *account_info.key == signer {
                             new_account_info.is_signer = true;
                         }
@@ -143,8 +143,8 @@ pub fn do_process_instruction(instruction: Instruction, accounts: &[AccountInfo]
         .iter_mut()
         .map(NativeAccountData::as_account_info)
         .collect::<Vec<_>>();
-    let res = if instruction.program_id == nova_psm::id() {
-        nova_psm::processor::Processor::process(
+    let res = if instruction.program_id == solana_psm::id() {
+        solana_psm::processor::Processor::process(
             &instruction.program_id,
             &account_infos,
             &instruction.data,

@@ -18,7 +18,7 @@ import {
 import {u64, publicKey} from '@solana/buffer-layout-utils';
 import {loadAccount} from './util/account.js';
 
-export const NOVA_PSM_PROGRAM_ID: PublicKey = new PublicKey(
+export const SOLANA_PSM_PROGRAM_ID: PublicKey = new PublicKey(
   '5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv',
 );
 

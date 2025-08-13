@@ -1,4 +1,4 @@
-# Nova PSM
+# Solana PSM
 
 This repository contains the implementation of a PSM (Peg Stability Module) for the Solana Virtual Machine. The functionality within this program is based largely on Spark's PSM [link](https://github.com/sparkdotfi/spark-psm).
 
@@ -172,7 +172,7 @@ solana balance
 
 # Deploy with production keypair
 cargo build-sbf  
-solana program deploy target/deploy/nova_psm.so --keypair ~/production-deployer.json
+solana program deploy target/deploy/solana_psm.so --keypair ~/production-deployer.json
 ```
 
 ## Program Addresses

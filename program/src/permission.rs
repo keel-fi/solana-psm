@@ -179,7 +179,7 @@ impl Permission {
             return Err(ProgramError::IncorrectProgramId)
         }
 
-        // If it is owned by nova PSM and is initialized, we revert
+        // If it is owned by solana PSM and is initialized, we revert
         if permission_account.owner == program_id {
             let existing_permission = Permission::unpack_unchecked(&permission_account.data.borrow())?;
             if existing_permission.is_initialized {

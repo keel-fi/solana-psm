@@ -24,7 +24,7 @@ use solana_sdk::{
     transaction::Transaction,
     system_instruction::transfer
 };
-use nova_psm::curve::{
+use solana_psm::curve::{
     redemption_rate::RedemptionRateCurve, 
     fees::Fees
 };

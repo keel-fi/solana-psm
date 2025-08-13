@@ -15,7 +15,7 @@ use solana_program_test::{
     ProgramTestContext
 };
 use solana_program::pubkey;
-use nova_psm::{
+use solana_psm::{
     curve::redemption_rate::RedemptionRateCurve, permission::Permission, state::SwapVersion
 };
 use spl_token::{
@@ -30,7 +30,7 @@ pub async fn program_test_context() -> ProgramTestContext {
     let mut program_test = ProgramTest::default();
 
     program_test.add_program(
-        "nova_psm", 
+        "solana_psm", 
         PROGRAM_ID, 
         None
     );

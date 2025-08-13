@@ -80,7 +80,6 @@ const FEES: &Fees = &Fees {
 #[cfg(feature = "production")]
 const VALID_CURVE_TYPES: &[CurveType] = &[
     CurveType::ConstantPrice, 
-    CurveType::ConstantProduct, 
     CurveType::RedemptionRateCurve
 ];
 
