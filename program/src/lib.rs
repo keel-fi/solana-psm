@@ -21,4 +21,4 @@ mod entrypoint;
 // version
 pub use solana_program;
 
-solana_program::declare_id!("5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv");
+solana_program::declare_id!("PSMi4nPG9aB2cKksv5LoxVS1RufH1bew59vr6bxdDYH");
