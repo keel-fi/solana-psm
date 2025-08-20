@@ -22,7 +22,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 
-import {TokenSwap, CurveType, NOVA_PSM_PROGRAM_ID} from '../src';
+import {TokenSwap, CurveType, SOLANA_PSM_PROGRAM_ID} from '../src';
 import {newAccountWithLamports} from '../src/util/new-account-with-lamports';
 import {sleep} from '../src/util/sleep';
 
@@ -40,7 +40,7 @@ describe('spl-token-swap instructions', () => {
   it('executes properly', async () => {
     // These test cases are designed to run sequentially and in the following order
     console.log('Run test: createTokenSwap (redemption rate curve)');
-    const redemptionRate = new Uint8Array(80);
+    const redemptionRate = new Uint8Array(64);
 
     await createTokenSwap(CurveType.RedemptionRate, redemptionRate);
     console.log(
@@ -152,15 +152,14 @@ export async function createTokenSwap(
   const tokenSwapAccount = Keypair.generate();
 
   const current_time = await connection.getBlockTime(await connection.getSlot());
-  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 0);      // ray: 0-15
-  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 16);  // max_ssr: 16-31
-  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 32);      // ssr: 32-47
-  curveParameters.set(bigIntToLittleEndianBytes(BigInt(current_time!), 16), 48);      // rho: 48-63
-  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 64);      // chi: 64-79
+  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 0);  // max_ssr:  0-15
+  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 16);      // ssr: 16-31 
+  curveParameters.set(bigIntToLittleEndianBytes(BigInt(current_time!), 16), 32);      // rho: 32-47
+  curveParameters.set(bigIntToLittleEndianBytes(RAY, 16), 48);      // chi: 48-63
 
   [authority, bumpSeed] = await PublicKey.findProgramAddress(
     [tokenSwapAccount.publicKey.toBuffer()],
-    NOVA_PSM_PROGRAM_ID,
+    SOLANA_PSM_PROGRAM_ID,
   );
 
   console.log('creating pool mint');
@@ -180,7 +179,7 @@ export async function createTokenSwap(
       Buffer.from("init_destination"),
       tokenSwapAccount.publicKey.toBuffer()
     ],
-    NOVA_PSM_PROGRAM_ID
+    SOLANA_PSM_PROGRAM_ID
   );
 
   console.log('creating pool account');
@@ -274,7 +273,7 @@ export async function createTokenSwap(
     mintB,
     feeAccount,
     tokenAccountPool,
-    NOVA_PSM_PROGRAM_ID,
+    SOLANA_PSM_PROGRAM_ID,
     TOKEN_PROGRAM_ID,
     TRADING_FEE_NUMERATOR,
     TRADING_FEE_DENOMINATOR,
@@ -292,7 +291,7 @@ export async function createTokenSwap(
   const fetchedTokenSwap = await TokenSwap.loadTokenSwap(
     connection,
     tokenSwapAccount.publicKey,
-    NOVA_PSM_PROGRAM_ID,
+    SOLANA_PSM_PROGRAM_ID,
     swapPayer,
   );
 

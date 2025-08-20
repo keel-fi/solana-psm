@@ -1,8 +1,8 @@
 [package]
-name = "nova-psm"
+name = "solana-psm"
 version = "1.0.0"
-description = "Nova Peg Stability Module"
-repository = "https://github.com/nova-dot-gg/nova-psm"
+description = "Solana Peg Stability Module"
+repository = "https://github.com/keel-fi/solana-psm"
 license = "APGL-3"
 edition = "2021"
 

@@ -155,6 +155,13 @@ pub enum SwapInstruction {
     ///   8. `[writable]` Pool Token Account to deposit the initial pool token
     ///      supply. Must be empty, not owned by swap authority.
     ///   9. `[]` Pool Token program id
+    /// 
+    /// *Extra accounts for `RedemptionRateCurve`:*
+    /// 
+    ///  10.  `[writable]` Permission account to be created.
+    ///  11.  `[]` Super admin pubkey, linked to Permission account.
+    ///  12.  `[signer, writable]` Payer (funds `create_account` for the permission account).
+    ///  13.  `[]` System program id.
     Initialize(Initialize),
 
     ///   Swap the tokens in the pool.
@@ -533,7 +540,7 @@ impl SwapInstruction {
     }
 }
 
-/// Extyra accounts needed for RedemptionRate curve
+/// Extra accounts needed for RedemptionRate curve
 pub struct RedemptionRateExtraAccounts<'a> {
     /// pda created at initialization
     pub permission_account: &'a Pubkey,
@@ -880,7 +887,7 @@ mod tests {
         expect.extend_from_slice(&host_fee_denominator.to_le_bytes());
         expect.push(curve_type as u8);
         expect.extend_from_slice(&token_b_offset.to_le_bytes());
-        expect.extend_from_slice(&[0u8; 72]);
+        expect.extend_from_slice(&[0u8; 56]);
         assert_eq!(packed, expect);
         let unpacked = SwapInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);

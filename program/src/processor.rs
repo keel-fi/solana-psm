@@ -31,26 +31,33 @@ impl Processor {
     /// Unpacks a spl_token `Account`.
     pub fn unpack_token_account(
         account_info: &AccountInfo,
-        token_program_id: &Pubkey,
+        expected_mint: Option<&Pubkey>,
     ) -> Result<Account, SwapError> {
-        if account_info.owner != token_program_id
-            && check_spl_token_program_account(account_info.owner).is_err()
+        if check_spl_token_program_account(account_info.owner).is_err()
         {
             Err(SwapError::IncorrectTokenProgramId)
         } else {
-            StateWithExtensions::<Account>::unpack(&account_info.data.borrow())
+            let account = StateWithExtensions::<Account>::unpack(&account_info.data.borrow())
                 .map(|a| a.base)
-                .map_err(|_| SwapError::ExpectedAccount)
+                .map_err(|_| SwapError::ExpectedAccount)?;
+
+            // optionally check if account is associated with the expected mint
+            if let Some(expected_mint) = expected_mint {
+                if account.mint != *expected_mint {
+                    return Err(SwapError::InvalidAccountMint)
+                }
+            }
+
+            Ok(account)
         }
     }
 
     /// Unpacks a spl_token `Mint`.
+    /// Checks that the account owner is either the SPL‑Token v1 or v2022 program.
     pub fn unpack_mint(
         account_info: &AccountInfo,
-        token_program_id: &Pubkey,
     ) -> Result<Mint, SwapError> {
-        if account_info.owner != token_program_id
-            && check_spl_token_program_account(account_info.owner).is_err()
+        if check_spl_token_program_account(account_info.owner).is_err()
         {
             Err(SwapError::IncorrectTokenProgramId)
         } else {
@@ -61,12 +68,12 @@ impl Processor {
     }
 
     /// Unpacks a spl_token `Mint` with extension data
+    /// Fails if `owner` is not one of the two canonical SPL‑Token program IDs.
     pub fn unpack_mint_with_extensions<'a>(
         account_data: &'a [u8],
         owner: &Pubkey,
-        token_program_id: &Pubkey,
     ) -> Result<StateWithExtensions<'a, Mint>, SwapError> {
-        if owner != token_program_id && check_spl_token_program_account(owner).is_err() {
+        if check_spl_token_program_account(owner).is_err() {
             Err(SwapError::IncorrectTokenProgramId)
         } else {
             StateWithExtensions::<Mint>::unpack(account_data).map_err(|_| SwapError::ExpectedMint)
@@ -257,17 +264,28 @@ impl Processor {
         if *authority_info.key != swap_authority {
             return Err(SwapError::InvalidProgramAddress.into());
         }
-        let token_a = Self::unpack_token_account(token_a_info, &token_program_id)?;
-        let token_b = Self::unpack_token_account(token_b_info, &token_program_id)?;
-        let fee_account = Self::unpack_token_account(fee_account_info, &token_program_id)?;
-        let destination = Self::unpack_token_account(destination_info, &token_program_id)?;
+        let token_a = Self::unpack_token_account(
+            token_a_info, 
+            Some(token_a_mint_info.key)
+        )?;
+        let token_b = Self::unpack_token_account(
+            token_b_info, 
+            Some(token_b_mint_info.key)
+        )?;
+        let fee_account = Self::unpack_token_account(
+            fee_account_info, 
+            Some(pool_mint_info.key)
+        )?;
+        let destination = Self::unpack_token_account(
+            destination_info, 
+            Some(pool_mint_info.key)
+        )?;
         
         let pool_mint = {
             let pool_mint_data = pool_mint_info.data.borrow();
             let pool_mint = Self::unpack_mint_with_extensions(
                 &pool_mint_data,
                 pool_mint_info.owner,
-                &token_program_id,
             )?;
             validate_mint_extensions(&pool_mint, true)?;
             pool_mint.base
@@ -277,7 +295,6 @@ impl Processor {
         let token_a_mint_state = Self::unpack_mint_with_extensions(
             &token_a_mint_data, 
             token_a_mint_info.owner, 
-            &token_program_id
         )?;
         validate_mint_extensions(&token_a_mint_state, false)?;
 
@@ -285,7 +302,6 @@ impl Processor {
         let token_b_mint_state = Self::unpack_mint_with_extensions(
             &token_b_mint_data, 
             token_b_mint_info.owner, 
-            &token_program_id
         )?;
         validate_mint_extensions(&token_b_mint_state, false)?;
 
@@ -304,6 +320,10 @@ impl Processor {
             ], 
             program_id
         );
+
+        if swap_info.owner != program_id {
+            return Err(ProgramError::InvalidAccountOwner)
+        }
 
         // Reject if destination is not owned by PDA
         if destination_owner_pda != destination.owner {
@@ -368,7 +388,8 @@ impl Processor {
         let timestamp_opt = match swap_curve.curve_type {
             CurveType::RedemptionRateCurve => Some(Clock::get()?.unix_timestamp as u128),
             _ => None
-        } ;
+        };
+
         swap_curve.calculator.validate(timestamp_opt)?;
 
         let initial_amount = swap_curve.calculator.new_pool_supply();
@@ -384,6 +405,11 @@ impl Processor {
         )?;
 
         if swap_curve.curve_type == CurveType::RedemptionRateCurve {
+            // RedemptionRateCurve requires both mints to have same decimals
+            if token_a_mint_state.base.decimals != token_b_mint_state.base.decimals {
+                return Err(SwapError::MismatchedMintDecimals.into())
+            }
+
             // permission account info
             let permission_info = next_account_info(account_info_iter)?;
             // super_admin account info
@@ -393,20 +419,23 @@ impl Processor {
 
             let system_program_info = next_account_info(account_info_iter)?;
             
-            let permission = Permission {
-                swap: *swap_info.key,
-                authority: *super_admin_info.key,
-                is_super_admin: true,
-                can_update_parameters: true,
-            };
             // create permission with invoke_signed
             Permission::create_permission_account(
+                program_id,
                 payer_info.clone(), 
                 permission_info.clone(), 
                 system_program_info.clone(),
                 swap_info.key, 
                 super_admin_info.key
             )?;
+
+            let permission = Permission {
+                is_initialized: true,
+                swap: *swap_info.key,
+                authority: *super_admin_info.key,
+                is_super_admin: true,
+                can_update_parameters: true,
+            };
 
             // pack permission in permission_info
             Permission::pack(permission, &mut permission_info.data.borrow_mut())?;
@@ -493,11 +522,15 @@ impl Processor {
             return Err(SwapError::IncorrectTokenProgramId.into());
         }
 
-        let source_account =
-            Self::unpack_token_account(swap_source_info, token_swap.token_program_id())?;
-        let dest_account =
-            Self::unpack_token_account(swap_destination_info, token_swap.token_program_id())?;
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
+        let source_account =  Self::unpack_token_account(
+            swap_source_info, 
+            Some(source_token_mint_info.key)
+        )?;
+        let dest_account = Self::unpack_token_account(
+            swap_destination_info, 
+            Some(destination_token_mint_info.key)
+        )?;
+        let pool_mint = Self::unpack_mint(pool_mint_info)?;
 
         // Calculate the trade amounts
         let trade_direction = if *swap_source_info.key == *token_swap.token_a_account() {
@@ -525,7 +558,6 @@ impl Processor {
             let source_mint = Self::unpack_mint_with_extensions(
                 &source_mint_data,
                 source_token_mint_info.owner,
-                token_swap.token_program_id(),
             )?;
 
             (source_amount_swapped, source_mint.base.decimals)
@@ -536,7 +568,6 @@ impl Processor {
             let destination_mint = Self::unpack_mint_with_extensions(
                 &destination_mint_data,
                 destination_token_mint_info.owner,
-                token_swap.token_program_id(),
             )?;
             let amount_out = to_u64(result.destination_amount_swapped)?;
             if amount_out < minimum_amount_out {
@@ -589,59 +620,59 @@ impl Processor {
             let mut pool_token_amount = token_swap
                 .swap_curve()
                 .calculator
-                .withdraw_single_token_type_exact_out(
+                .deposit_single_token_type(
                     result.owner_fee,
                     swap_token_a_amount,
                     swap_token_b_amount,
                     u128::from(pool_mint.supply),
                     trade_direction,
-                    RoundDirection::Floor,
                     token_swap.get_current_timestamp_opt()?
                 )
                 .ok_or(SwapError::FeeCalculationFailure)?;
 
-            // Allow error to fall through
-            if let Ok(host_fee_account_info) = next_account_info(account_info_iter) {
-                let host_fee_account = Self::unpack_token_account(
-                    host_fee_account_info,
-                    token_swap.token_program_id(),
-                )?;
-                if *pool_mint_info.key != host_fee_account.mint {
-                    return Err(SwapError::IncorrectPoolMint.into());
-                }
-                let host_fee = token_swap
-                    .fees()
-                    .host_fee(pool_token_amount)
-                    .ok_or(SwapError::FeeCalculationFailure)?;
-                if host_fee > 0 {
-                    pool_token_amount = pool_token_amount
-                        .checked_sub(host_fee)
+            if pool_token_amount > 0 {
+                if let Ok(host_fee_account_info) = next_account_info(account_info_iter) {
+                    // unpack it in order to verify it is associated to pool_mint_info
+                    let _ = Self::unpack_token_account(
+                        host_fee_account_info,
+                        Some(pool_mint_info.key)
+                    )?;
+
+                    let host_fee = token_swap
+                        .fees()
+                        .host_fee(pool_token_amount)
                         .ok_or(SwapError::FeeCalculationFailure)?;
+
+                    if host_fee > 0 {
+                        pool_token_amount = pool_token_amount
+                            .checked_sub(host_fee)
+                            .ok_or(SwapError::FeeCalculationFailure)?;
+                        Self::token_mint_to(
+                            swap_info.key,
+                            pool_token_program_info.clone(),
+                            pool_mint_info.clone(),
+                            host_fee_account_info.clone(),
+                            authority_info.clone(),
+                            token_swap.bump_seed(),
+                            to_u64(host_fee)?,
+                        )?;
+                    }
+                }
+
+                if token_swap.check_pool_fee_info(pool_fee_account_info).is_ok() 
+                    && pool_token_amount > 0
+                {
                     Self::token_mint_to(
                         swap_info.key,
                         pool_token_program_info.clone(),
                         pool_mint_info.clone(),
-                        host_fee_account_info.clone(),
+                        pool_fee_account_info.clone(),
                         authority_info.clone(),
                         token_swap.bump_seed(),
-                        to_u64(host_fee)?,
+                        to_u64(pool_token_amount)?,
                     )?;
-                }
+                };
             }
-            if token_swap
-                .check_pool_fee_info(pool_fee_account_info)
-                .is_ok()
-            {
-                Self::token_mint_to(
-                    swap_info.key,
-                    pool_token_program_info.clone(),
-                    pool_mint_info.clone(),
-                    pool_fee_account_info.clone(),
-                    authority_info.clone(),
-                    token_swap.bump_seed(),
-                    to_u64(pool_token_amount)?,
-                )?;
-            };
         }
 
         Self::token_transfer(
@@ -702,15 +733,21 @@ impl Processor {
             None,
         )?;
 
-        let token_a = Self::unpack_token_account(token_a_info, token_swap.token_program_id())?;
-        let token_b = Self::unpack_token_account(token_b_info, token_swap.token_program_id())?;
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
-        let current_pool_mint_supply = u128::from(pool_mint.supply);
-        let (pool_token_amount, pool_mint_supply) = if current_pool_mint_supply > 0 {
-            (u128::from(pool_token_amount), current_pool_mint_supply)
-        } else {
-            (calculator.new_pool_supply(), calculator.new_pool_supply())
-        };
+        let token_a = Self::unpack_token_account(
+            token_a_info, 
+            Some(token_a_mint_info.key)
+        )?;
+        let token_b = Self::unpack_token_account(
+            token_b_info, 
+            Some(token_b_mint_info.key)
+        )?;
+        let pool_mint = Self::unpack_mint(pool_mint_info)?;
+        
+        // The pool_mint_supply is never zero since the initial LP tokens,
+        // minted at curve initialization, are owned by an inaccessible PDA.
+        // Hence, the code for handling total_supply == 0 has been removed.
+        let pool_mint_supply = u128::from(pool_mint.supply);
+        let pool_token_amount = u128::from(pool_token_amount);
 
         let results = calculator
             .pool_tokens_to_trading_tokens(
@@ -721,21 +758,25 @@ impl Processor {
                 RoundDirection::Ceiling,
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
+
         let token_a_amount = to_u64(results.token_a_amount)?;
+
         if token_a_amount > maximum_token_a_amount {
             return Err(SwapError::ExceededSlippage.into());
         }
-        if token_a_amount == 0 {
-            return Err(SwapError::ZeroTradingTokens.into());
-        }
+
         let token_b_amount = to_u64(results.token_b_amount)?;
+
         if token_b_amount > maximum_token_b_amount {
             return Err(SwapError::ExceededSlippage.into());
         }
-        if token_b_amount == 0 {
-            return Err(SwapError::ZeroTradingTokens.into());
-        }
 
+        if token_swap.swap_curve().curve_type == CurveType::ConstantProduct {
+            if token_a_amount == 0 || token_b_amount == 0 {
+                return Err(SwapError::ZeroTradingTokens.into());
+            }
+        }
+        
         let pool_token_amount = to_u64(pool_token_amount)?;
 
         Self::token_transfer(
@@ -747,7 +788,7 @@ impl Processor {
             user_transfer_authority_info.clone(),
             token_swap.bump_seed(),
             token_a_amount,
-            Self::unpack_mint(token_a_mint_info, token_swap.token_program_id())?.decimals,
+            Self::unpack_mint(token_a_mint_info)?.decimals,
         )?;
         Self::token_transfer(
             swap_info.key,
@@ -758,7 +799,7 @@ impl Processor {
             user_transfer_authority_info.clone(),
             token_swap.bump_seed(),
             token_b_amount,
-            Self::unpack_mint(token_b_mint_info, token_swap.token_program_id())?.decimals,
+            Self::unpack_mint(token_b_mint_info)?.decimals,
         )?;
         Self::token_mint_to(
             swap_info.key,
@@ -813,9 +854,15 @@ impl Processor {
             Some(pool_fee_account_info),
         )?;
 
-        let token_a = Self::unpack_token_account(token_a_info, token_swap.token_program_id())?;
-        let token_b = Self::unpack_token_account(token_b_info, token_swap.token_program_id())?;
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
+        let token_a = Self::unpack_token_account(
+            token_a_info, 
+            Some(token_a_mint_info.key)
+        )?;
+        let token_b = Self::unpack_token_account(
+            token_b_info, 
+            Some(token_b_mint_info.key)
+        )?;
+        let pool_mint = Self::unpack_mint(pool_mint_info)?;
 
         let calculator = &token_swap.swap_curve().calculator;
 
@@ -846,21 +893,28 @@ impl Processor {
                 RoundDirection::Floor,
             )
             .ok_or(SwapError::ZeroTradingTokens)?;
+        
         let token_a_amount = to_u64(results.token_a_amount)?;
         let token_a_amount = std::cmp::min(token_a.amount, token_a_amount);
         if token_a_amount < minimum_token_a_amount {
             return Err(SwapError::ExceededSlippage.into());
         }
-        if token_a_amount == 0 && token_a.amount != 0 {
-            return Err(SwapError::ZeroTradingTokens.into());
-        }
+        
         let token_b_amount = to_u64(results.token_b_amount)?;
         let token_b_amount = std::cmp::min(token_b.amount, token_b_amount);
         if token_b_amount < minimum_token_b_amount {
             return Err(SwapError::ExceededSlippage.into());
         }
-        if token_b_amount == 0 && token_b.amount != 0 {
-            return Err(SwapError::ZeroTradingTokens.into());
+        
+
+        if token_swap.swap_curve().curve_type == CurveType::ConstantProduct {
+            if token_a_amount == 0 && token_a.amount != 0 {
+                return Err(SwapError::ZeroTradingTokens.into());
+            }
+
+            if token_b_amount == 0 && token_b.amount != 0 {
+                return Err(SwapError::ZeroTradingTokens.into());
+            }
         }
 
         if withdraw_fee > 0 {
@@ -896,7 +950,7 @@ impl Processor {
                 authority_info.clone(),
                 token_swap.bump_seed(),
                 token_a_amount,
-                Self::unpack_mint(token_a_mint_info, token_swap.token_program_id())?.decimals,
+                Self::unpack_mint(token_a_mint_info)?.decimals,
             )?;
         }
         if token_b_amount > 0 {
@@ -909,7 +963,7 @@ impl Processor {
                 authority_info.clone(),
                 token_swap.bump_seed(),
                 token_b_amount,
-                Self::unpack_mint(token_b_mint_info, token_swap.token_program_id())?.decimals,
+                Self::unpack_mint(token_b_mint_info)?.decimals,
             )?;
         }
         Ok(())
@@ -943,12 +997,18 @@ impl Processor {
         if !calculator.allows_deposits() {
             return Err(SwapError::UnsupportedCurveOperation.into());
         }
-        let source_account =
-            Self::unpack_token_account(source_info, token_swap.token_program_id())?;
-        let swap_token_a =
-            Self::unpack_token_account(swap_token_a_info, token_swap.token_program_id())?;
-        let swap_token_b =
-            Self::unpack_token_account(swap_token_b_info, token_swap.token_program_id())?;
+        let source_account = Self::unpack_token_account(
+            source_info, 
+            Some(source_token_mint_info.key)
+        )?;
+        let swap_token_a = Self::unpack_token_account(
+            swap_token_a_info, 
+            Some(token_swap.token_a_mint())
+        )?;
+        let swap_token_b = Self::unpack_token_account(
+            swap_token_b_info, 
+            Some(token_swap.token_b_mint())
+        )?;
 
         let trade_direction = if source_account.mint == swap_token_a.mint {
             TradeDirection::AtoB
@@ -974,30 +1034,33 @@ impl Processor {
             pool_token_program_info,
             source_a_info,
             source_b_info,
-            None,
+            pool_fee_account_info,
         )?;
 
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
-        let pool_mint_supply = u128::from(pool_mint.supply);
-        let (pool_token_amount, owner_fee) = if pool_mint_supply > 0 {
-            let SingleTokenTypeResult {
-                amount, owner_fee
-            } = token_swap
-                .swap_curve()
-                .deposit_single_token_type(
-                    u128::from(source_token_amount),
-                    u128::from(swap_token_a.amount),
-                    u128::from(swap_token_b.amount),
-                    pool_mint_supply,
-                    trade_direction,
-                    token_swap.fees(),
-                    token_swap.get_current_timestamp_opt()?
-                )
-                .ok_or(SwapError::ZeroTradingTokens)?;
-            (amount, owner_fee)
-        } else {
-            (calculator.new_pool_supply(), 0)
-        };
+        let pool_mint = Self::unpack_mint(pool_mint_info)?;
+        // The pool_mint_supply is never zero since the initial LP tokens,
+        // minted at curve initialization, are owned by an inaccessible PDA.
+        // Hence, the code for handling total_supply == 0 has been removed.
+        let mut pool_mint_supply = u128::from(pool_mint.supply);
+
+        let mut swap_token_a_amount = u128::from(swap_token_a.amount);
+        let mut swap_token_b_amount = u128::from(swap_token_b.amount);
+
+        let SingleTokenTypeResult { 
+            amount: pool_token_amount, 
+            owner_fee 
+        } = token_swap
+            .swap_curve()
+            .deposit_single_token_type(
+                u128::from(source_token_amount),
+                swap_token_a_amount,
+                swap_token_b_amount,
+                pool_mint_supply,
+                trade_direction,
+                token_swap.fees(),
+                token_swap.get_current_timestamp_opt()?
+            )
+            .ok_or(SwapError::ZeroTradingTokens)?;
 
         let pool_token_amount = to_u64(pool_token_amount)?;
         if pool_token_amount < minimum_pool_token_amount {
@@ -1006,68 +1069,90 @@ impl Processor {
         if pool_token_amount == 0 {
             return Err(SwapError::ZeroTradingTokens.into());
         }
-        
-        let mut owner_fee_pool = token_swap
-            .swap_curve()
-            .calculator
-            .withdraw_single_token_type_exact_out(
-                owner_fee,
-                u128::from(swap_token_a.amount),
-                u128::from(swap_token_b.amount),
-                u128::from(pool_mint.supply),
-                trade_direction,
-                RoundDirection::Floor,
-                token_swap.get_current_timestamp_opt()?
-            )
-            .ok_or(SwapError::FeeCalculationFailure)?;
 
-        let host_fee = token_swap
-            .fees()
-            .host_fee(owner_fee_pool)
-            .ok_or(SwapError::FeeCalculationFailure)?;
-
-        if let Some(host_fee_account_info) = host_fee_account_info {
-            // Must be the same mint as the pool
-            if *pool_mint_info.key
-                != Self::unpack_token_account(host_fee_account_info, token_swap.token_program_id())?.mint
-            {
-                return Err(SwapError::IncorrectPoolMint.into());
+        if owner_fee > 0 {
+            if trade_direction == TradeDirection::AtoB {
+                swap_token_a_amount = swap_token_a_amount
+                    .checked_add(u128::from(source_token_amount))
+                    .ok_or(SwapError::FeeCalculationFailure)? 
+                    .checked_sub(owner_fee)
+                    .ok_or(SwapError::FeeCalculationFailure)?;
+            } else {
+                swap_token_b_amount = swap_token_b_amount
+                    .checked_add(u128::from(source_token_amount))
+                    .ok_or(SwapError::FeeCalculationFailure)? 
+                    .checked_sub(owner_fee)
+                    .ok_or(SwapError::FeeCalculationFailure)?;
             }
             
-            if host_fee > 0 {
-                Self::token_mint_to(
-                    swap_info.key,
-                    pool_token_program_info.clone(),
-                    pool_mint_info.clone(),
-                    host_fee_account_info.clone(),
-                    authority_info.clone(),
-                    token_swap.bump_seed(),
-                    to_u64(host_fee)?,
-                )?;
-            }
-        }
+            pool_mint_supply = pool_mint_supply
+                .checked_add(u128::from(pool_token_amount))
+                .ok_or(SwapError::FeeCalculationFailure)?;
 
-        owner_fee_pool = if host_fee_account_info.is_some() {
-            owner_fee_pool
-                .checked_sub(host_fee)
-                .ok_or(SwapError::FeeCalculationFailure)?
-        } else {
-            owner_fee_pool
+            let mut owner_fee_pool = token_swap
+                .swap_curve()
+                .calculator
+                .deposit_single_token_type(
+                    owner_fee,
+                    swap_token_a_amount,
+                    swap_token_b_amount,
+                    pool_mint_supply,
+                    trade_direction,
+                    token_swap.get_current_timestamp_opt()?
+                )
+                .ok_or(SwapError::FeeCalculationFailure)?;
+
+            if owner_fee_pool > 0 {
+                // if host_fee_account_info is provided, we process host fees and substract from `owner_fee_pool`
+                if let Some(host_fee_account_info) = host_fee_account_info {
+
+                    // unpack it in order to validater mint
+                    let _ = Self::unpack_token_account(
+                        host_fee_account_info, 
+                        Some(pool_mint_info.key)
+                    )?;
+
+                    let host_fee = token_swap
+                        .fees()
+                        .host_fee(owner_fee_pool)
+                        .ok_or(SwapError::FeeCalculationFailure)?;
+
+                    if host_fee > 0 {
+                        owner_fee_pool = owner_fee_pool
+                            .checked_sub(host_fee)
+                            .ok_or(SwapError::FeeCalculationFailure)?;
+
+                        Self::token_mint_to(
+                            swap_info.key,
+                            pool_token_program_info.clone(),
+                            pool_mint_info.clone(),
+                            host_fee_account_info.clone(),
+                            authority_info.clone(),
+                            token_swap.bump_seed(),
+                            to_u64(host_fee)?,
+                        )?;
+                    }
+                }
+
+                // if pool_fee_account_info is provided, we verify that owner_fee_pool is still > 0
+                // (after host_fee substraction) and mint
+                if let Some(pool_fee_account_info) = pool_fee_account_info {
+                    if token_swap.check_pool_fee_info(pool_fee_account_info).is_ok() 
+                        && owner_fee_pool > 0 
+                    {
+                        Self::token_mint_to(
+                            swap_info.key,
+                            pool_token_program_info.clone(),
+                            pool_mint_info.clone(),
+                            pool_fee_account_info.clone(),
+                            authority_info.clone(),
+                            token_swap.bump_seed(),
+                            to_u64(owner_fee_pool)?,
+                        )?;
+                    }
+                }
+            }
         };
-
-        if let Some(pool_fee_account_info) = pool_fee_account_info {
-            if token_swap.check_pool_fee_info(pool_fee_account_info).is_ok() && owner_fee_pool > 0 {
-                Self::token_mint_to(
-                    swap_info.key,
-                    pool_token_program_info.clone(),
-                    pool_mint_info.clone(),
-                    pool_fee_account_info.clone(),
-                    authority_info.clone(),
-                    token_swap.bump_seed(),
-                    to_u64(owner_fee_pool)?,
-                )?;
-            }
-        }
 
         match trade_direction {
             TradeDirection::AtoB => {
@@ -1080,7 +1165,7 @@ impl Processor {
                     user_transfer_authority_info.clone(),
                     token_swap.bump_seed(),
                     source_token_amount,
-                    Self::unpack_mint(source_token_mint_info, token_swap.token_program_id())?
+                    Self::unpack_mint(source_token_mint_info)?
                         .decimals,
                 )?;
             }
@@ -1094,8 +1179,7 @@ impl Processor {
                     user_transfer_authority_info.clone(),
                     token_swap.bump_seed(),
                     source_token_amount,
-                    Self::unpack_mint(source_token_mint_info, token_swap.token_program_id())?
-                        .decimals,
+                    Self::unpack_mint(source_token_mint_info)?.decimals,
                 )?;
             }
         }
@@ -1137,12 +1221,18 @@ impl Processor {
         let host_fee_account_info     = account_info_iter.next();
 
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
-        let destination_account =
-            Self::unpack_token_account(destination_info, token_swap.token_program_id())?;
-        let swap_token_a =
-            Self::unpack_token_account(swap_token_a_info, token_swap.token_program_id())?;
-        let swap_token_b =
-            Self::unpack_token_account(swap_token_b_info, token_swap.token_program_id())?;
+        let destination_account = Self::unpack_token_account(
+            destination_info, 
+            Some(destination_token_mint_info.key)
+        )?;
+        let swap_token_a = Self::unpack_token_account(
+            swap_token_a_info, 
+            Some(token_swap.token_a_mint())
+        )?;
+        let swap_token_b = Self::unpack_token_account(
+            swap_token_b_info, 
+            Some(token_swap.token_b_mint())
+        )?;
 
         let trade_direction = if destination_account.mint == swap_token_a.mint {
             TradeDirection::AtoB
@@ -1170,10 +1260,10 @@ impl Processor {
             Some(pool_fee_account_info),
         )?;
 
-        let pool_mint = Self::unpack_mint(pool_mint_info, token_swap.token_program_id())?;
-        let pool_mint_supply = u128::from(pool_mint.supply);
-        let swap_token_a_amount = u128::from(swap_token_a.amount);
-        let swap_token_b_amount = u128::from(swap_token_b.amount);
+        let pool_mint = Self::unpack_mint(pool_mint_info)?;
+        let mut pool_mint_supply = u128::from(pool_mint.supply);
+        let mut swap_token_a_amount = u128::from(swap_token_a.amount);
+        let mut swap_token_b_amount = u128::from(swap_token_b.amount);
 
         let SingleTokenTypeResult {
             amount: burn_pool_token_amount,
@@ -1206,59 +1296,79 @@ impl Processor {
             Err(_) => 0,
         };
 
-        let mut owner_fee_pool = token_swap
-            .swap_curve()
-            .calculator
-            .withdraw_single_token_type_exact_out(
-                owner_fee,
-                u128::from(swap_token_a.amount),
-                u128::from(swap_token_b.amount),
-                pool_mint_supply,
-                trade_direction,
-                RoundDirection::Floor,
-                token_swap.get_current_timestamp_opt()?,
-            )
-            .ok_or(SwapError::FeeCalculationFailure)?;
-
-        if let Some(host_account_info) = host_fee_account_info {
-            // mint sanity
-            if *pool_mint_info.key
-                != Self::unpack_token_account(host_account_info, token_swap.token_program_id())?.mint
-            {
-                return Err(SwapError::IncorrectPoolMint.into());
+        if owner_fee > 0 {
+            if trade_direction == TradeDirection::AtoB {
+                swap_token_a_amount = swap_token_a_amount
+                    .checked_sub(u128::from(destination_token_amount))
+                    .ok_or(SwapError::FeeCalculationFailure)? 
+                    .checked_sub(owner_fee)
+                    .ok_or(SwapError::FeeCalculationFailure)?;
+            } else {
+                swap_token_b_amount = swap_token_b_amount
+                    .checked_sub(u128::from(destination_token_amount))
+                    .ok_or(SwapError::FeeCalculationFailure)? 
+                    .checked_sub(owner_fee)
+                    .ok_or(SwapError::FeeCalculationFailure)?;
             }
 
-            let host_fee = token_swap
-                .fees()
-                .host_fee(owner_fee_pool)
+            pool_mint_supply = pool_mint_supply
+                .checked_sub(u128::from(burn_pool_token_amount))
                 .ok_or(SwapError::FeeCalculationFailure)?;
 
-            if host_fee > 0 {
-                owner_fee_pool = owner_fee_pool
-                    .checked_sub(host_fee)
-                    .ok_or(SwapError::FeeCalculationFailure)?;
-                Self::token_mint_to(
-                    swap_info.key,
-                    pool_token_program_info.clone(),
-                    pool_mint_info.clone(),
-                    host_account_info.clone(),
-                    authority_info.clone(),
-                    token_swap.bump_seed(),
-                    to_u64(host_fee)?,
-                )?;
-            }
-        }
+            let mut owner_fee_pool = token_swap
+                .swap_curve()
+                .calculator
+                .deposit_single_token_type(
+                    owner_fee,
+                    swap_token_a_amount,
+                    swap_token_b_amount,
+                    pool_mint_supply,
+                    trade_direction,
+                    token_swap.get_current_timestamp_opt()?,
+                )
+                .ok_or(SwapError::FeeCalculationFailure)?;
 
-        if token_swap.check_pool_fee_info(pool_fee_account_info).is_ok() {
-            Self::token_mint_to(
-                swap_info.key,
-                pool_token_program_info.clone(),
-                pool_mint_info.clone(),
-                pool_fee_account_info.clone(),
-                authority_info.clone(),
-                token_swap.bump_seed(),
-                to_u64(owner_fee_pool)?,
-            )?;
+            if owner_fee_pool > 0 {
+                if let Some(host_account_info) = host_fee_account_info {
+                    // unpack it to validate mint
+                    let _ = Self::unpack_token_account(
+                        host_account_info, 
+                        Some(pool_mint_info.key)
+                    )?;
+
+                    let host_fee = token_swap
+                        .fees()
+                        .host_fee(owner_fee_pool)
+                        .ok_or(SwapError::FeeCalculationFailure)?;
+
+                    if host_fee > 0 {
+                        owner_fee_pool = owner_fee_pool
+                            .checked_sub(host_fee)
+                            .ok_or(SwapError::FeeCalculationFailure)?;
+                        Self::token_mint_to(
+                            swap_info.key,
+                            pool_token_program_info.clone(),
+                            pool_mint_info.clone(),
+                            host_account_info.clone(),
+                            authority_info.clone(),
+                            token_swap.bump_seed(),
+                            to_u64(host_fee)?,
+                        )?;
+                    }
+                }
+
+                if token_swap.check_pool_fee_info(pool_fee_account_info).is_ok() {
+                    Self::token_mint_to(
+                        swap_info.key,
+                        pool_token_program_info.clone(),
+                        pool_mint_info.clone(),
+                        pool_fee_account_info.clone(),
+                        authority_info.clone(),
+                        token_swap.bump_seed(),
+                        to_u64(owner_fee_pool)?,
+                    )?;
+                }
+            }
         }
 
         let pool_token_amount = burn_pool_token_amount
@@ -1306,7 +1416,7 @@ impl Processor {
                     authority_info.clone(),
                     token_swap.bump_seed(),
                     destination_token_amount,
-                    Self::unpack_mint(destination_token_mint_info, token_swap.token_program_id())?
+                    Self::unpack_mint(destination_token_mint_info)?
                         .decimals,
                 )?;
             }
@@ -1320,7 +1430,7 @@ impl Processor {
                     authority_info.clone(),
                     token_swap.bump_seed(),
                     destination_token_amount,
-                    Self::unpack_mint(destination_token_mint_info, token_swap.token_program_id())?
+                    Self::unpack_mint(destination_token_mint_info)?
                         .decimals,
                 )?;
             }
@@ -1490,7 +1600,7 @@ mod tests {
                 calculator::{CurveCalculator, INITIAL_SWAP_POOL_AMOUNT},
                 constant_price::ConstantPriceCurve,
                 constant_product::ConstantProductCurve,
-                offset::OffsetCurve,
+                offset::OffsetCurve, redemption_rate::RAY,
             },
             instruction::{
                 deposit_all_token_types, deposit_single_token_type_exact_amount_in, initialize,
@@ -1501,9 +1611,9 @@ mod tests {
             clock::Clock, entrypoint::SUCCESS, instruction::Instruction, program_pack::Pack,
             program_stubs, rent::Rent,
         },
-        solana_sdk::account::{
+        solana_sdk::{account::{
             create_account_for_test, create_is_signer_account_infos, Account as SolanaAccount,
-        },
+        }, instruction::AccountMeta},
         spl_token_2022::{
             error::TokenError,
             extension::ExtensionType,
@@ -1513,7 +1623,7 @@ mod tests {
                 mint_to, revoke, set_authority, AuthorityType,
             },
         },
-        std::sync::Arc,
+        std::{sync::Arc, u64},
         test_case::test_case,
     };
 
@@ -2963,7 +3073,7 @@ mod tests {
             let old_account = accounts.pool_fee_account;
             accounts.pool_fee_account = pool_fee_account;
             assert_eq!(
-                Err(SwapError::IncorrectPoolMint.into()),
+                Err(SwapError::InvalidAccountMint.into()),
                 accounts.initialize_swap()
             );
             accounts.pool_fee_account = old_account;
@@ -3162,10 +3272,11 @@ mod tests {
                 &accounts.authority_key,
                 10,
             );
+            
             let old_account = accounts.token_b_account;
             accounts.token_b_account = token_a_repeat_account;
             assert_eq!(
-                Err(SwapError::RepeatedMint.into()),
+                Err(SwapError::InvalidAccountMint.into()),
                 accounts.initialize_swap()
             );
             accounts.token_b_account = old_account;
@@ -5619,6 +5730,272 @@ mod tests {
                 pool_account.base.amount + swap_pool_account.base.amount
             );
         }
+
+        // user tries to pass their own pool-token ATA as the owner-fee account, must fail
+        {
+            let (
+                token_a_key,
+                mut token_a_account,
+                _token_b_key,
+                _token_b_account,
+                pool_key,            // user’s pool-token ATA  (wrong fee account)
+                mut pool_account,
+            ) = accounts.setup_token_accounts(&user_key, &depositor_key, deposit_a, deposit_b, 0);
+
+            let user_transfer_authority_key = Pubkey::new_unique();
+
+            do_process_instruction(
+                approve(
+                    &token_a_program_id,
+                    &token_a_key,
+                    &user_transfer_authority_key,
+                    &depositor_key,
+                    &[],
+                    deposit_a,
+                )
+                .unwrap(),
+                vec![
+                    &mut token_a_account,
+                    &mut SolanaAccount::default(),   // delegate
+                    &mut SolanaAccount::default(),   // rent
+                ],
+            )
+            .unwrap();
+
+            let mut ix = deposit_single_token_type_exact_amount_in(
+                &SWAP_PROGRAM_ID,
+                &token_a_program_id,
+                &pool_token_program_id,
+                &accounts.swap_key,
+                &accounts.authority_key,
+                &user_transfer_authority_key,
+                &token_a_key,
+                &accounts.token_a_key,
+                &accounts.token_b_key,
+                &accounts.pool_mint_key,
+                &pool_key,
+                &accounts.token_a_mint_key,
+                DepositSingleTokenTypeExactAmountIn {
+                    source_token_amount: deposit_a,
+                    minimum_pool_token_amount: pool_amount,
+                },
+            )
+            .unwrap();
+
+            // we add the invalid pool_fee_account
+            ix.accounts.push(AccountMeta::new(pool_key, false));
+
+            let mut bogus_fee_account = pool_account.clone();
+
+            assert_eq!(
+                Err(SwapError::IncorrectFeeAccount.into()),
+                do_process_instruction(
+                    ix,
+                    vec![
+                        &mut accounts.swap_account,
+                        &mut SolanaAccount::default(),
+                        &mut SolanaAccount::default(),
+                        &mut token_a_account,
+                        &mut accounts.token_a_account, 
+                        &mut accounts.token_b_account,
+                        &mut accounts.pool_mint_account,
+                        &mut pool_account,
+                        &mut accounts.token_a_mint_account,
+                        &mut SolanaAccount::default(),
+                        &mut SolanaAccount::default(),
+                        &mut bogus_fee_account,
+                    ],
+                )
+            );
+        }
+
+        // single token deposit - correct pool-fee ATA supplied
+        // Tests the adjusted swap_token_a amount and pool_mint_supply
+        {
+            // user begins with `deposit_a` token A and zero LP
+            let (
+                token_a_key,
+                mut token_a_account,
+                _token_b_key,
+                _token_b_account,
+                pool_key,
+                mut pool_account,
+            ) = accounts.setup_token_accounts(
+                &user_key,
+                &depositor_key,
+                deposit_a,
+                0,
+                0,
+            );
+
+            // we send an explicit instruction so we can append the correct fee ATA
+            let user_transfer_authority_key = Pubkey::new_unique();
+
+            // give the temp delegate authority over the user’s token A
+            do_process_instruction(
+                approve(
+                    &token_a_program_id,
+                    &token_a_key,
+                    &user_transfer_authority_key,
+                    &depositor_key,
+                    &[],
+                    deposit_a,
+                )
+                .unwrap(),
+                vec![
+                    &mut token_a_account,
+                    &mut SolanaAccount::default(),
+                    &mut SolanaAccount::default(),
+                ],
+            )
+            .unwrap();
+
+            // build the deposit instruction
+            let mut ix = deposit_single_token_type_exact_amount_in(
+                &SWAP_PROGRAM_ID,
+                &token_a_program_id,
+                &pool_token_program_id,
+                &accounts.swap_key,
+                &accounts.authority_key,
+                &user_transfer_authority_key,
+                &token_a_key,
+                &accounts.token_a_key,
+                &accounts.token_b_key,
+                &accounts.pool_mint_key,
+                &pool_key,
+                &accounts.token_a_mint_key,
+                DepositSingleTokenTypeExactAmountIn {
+                    source_token_amount: deposit_a,
+                    minimum_pool_token_amount: pool_amount,
+                },
+            )
+            .unwrap();
+
+            // append the pool-fee account (owner-fee destination)
+            ix.accounts.push(AccountMeta::new(
+                accounts.pool_fee_key, // this is the *correct* fee ATA
+                false,
+            ));
+
+            // reference math (owner-fee LP mint)
+            let (
+                // reserve A before the ix
+                token_a_pre,
+                // pool-fee ATA before the ix
+                fee_account_pre,
+                pool_supply_pre,
+                // LP minted to user
+                pool_token_amount,
+                // LP minted to fee account
+                owner_fee_pool,
+            ) = {
+                let swap_token_a =
+                    StateWithExtensions::<Account>::unpack(&accounts.token_a_account.data).unwrap();
+                let swap_token_b =
+                    StateWithExtensions::<Account>::unpack(&accounts.token_b_account.data).unwrap();
+                let pool_mint =
+                    StateWithExtensions::<Mint>::unpack(&accounts.pool_mint_account.data).unwrap();
+                let fee_account_pre = StateWithExtensions::<Account>::unpack(
+                    &accounts.pool_fee_account.data,
+                )
+                .unwrap()
+                .base
+                .amount;
+
+                let SingleTokenTypeResult { amount, owner_fee } =
+                    accounts.swap_curve.deposit_single_token_type(
+                        deposit_a.into(),
+                        swap_token_a.base.amount.into(),
+                        swap_token_b.base.amount.into(),
+                        pool_mint.base.supply.into(),
+                        TradeDirection::AtoB,
+                        &accounts.fees,
+                        accounts.get_current_timestamp_opt().unwrap(),
+                    ).unwrap();
+
+                let swap_token_a_for_fee = u128::from(swap_token_a.base.amount)
+                    .checked_add(deposit_a.into())
+                    .unwrap()
+                    .checked_sub(owner_fee)
+                    .unwrap();
+                let pool_supply_for_fee = u128::from(pool_mint.base.supply)
+                    .checked_add(amount)
+                    .unwrap();
+
+                let owner_fee_pool = accounts.swap_curve.calculator.deposit_single_token_type(
+                    owner_fee,
+                    swap_token_a_for_fee,
+                    swap_token_b.base.amount.into(),
+                    pool_supply_for_fee,
+                    TradeDirection::AtoB,
+                    accounts.get_current_timestamp_opt().unwrap(),
+                ).unwrap();
+
+                (
+                    swap_token_a.base.amount,
+                    fee_account_pre,
+                    pool_mint.base.supply,
+                    to_u64(amount).unwrap(),
+                    owner_fee_pool,
+                )
+            };
+
+            // execute the instruction with all required accounts
+            do_process_instruction(
+                ix,
+                vec![
+                    &mut accounts.swap_account,
+                    &mut SolanaAccount::default(),
+                    &mut SolanaAccount::default(),
+                    &mut token_a_account,
+                    &mut accounts.token_a_account,
+                    &mut accounts.token_b_account,
+                    &mut accounts.pool_mint_account,
+                    &mut pool_account,
+                    &mut accounts.token_a_mint_account,
+                    &mut SolanaAccount::default(),
+                    &mut SolanaAccount::default(),
+                    &mut accounts.pool_fee_account,
+                ],
+            )
+            .unwrap();
+
+            // pool reserve gained the full deposit
+            let swap_token_a_after =
+                StateWithExtensions::<Account>::unpack(&accounts.token_a_account.data).unwrap();
+            assert_eq!(
+                swap_token_a_after.base.amount,
+                token_a_pre + deposit_a
+            );
+
+            // user spent all their token A
+            let user_token_a_after =
+                StateWithExtensions::<Account>::unpack(&token_a_account.data).unwrap();
+            assert_eq!(user_token_a_after.base.amount, 0);
+
+            // user received LP tokens
+            let pool_account_after =
+                StateWithExtensions::<Account>::unpack(&pool_account.data).unwrap();
+            assert_eq!(pool_account_after.base.amount, pool_token_amount);
+
+            // fee account balance increased by owner_fee_pool
+            let fee_account_after =
+                StateWithExtensions::<Account>::unpack(&accounts.pool_fee_account.data).unwrap();
+            assert_eq!(
+                fee_account_after.base.amount,
+                fee_account_pre + to_u64(owner_fee_pool).unwrap()
+            );
+
+            // LP supply grew by user LP + owner_fee_pool
+            let pool_mint_after =
+                StateWithExtensions::<Mint>::unpack(&accounts.pool_mint_account.data).unwrap();
+            assert_eq!(
+                pool_mint_after.base.supply as u128,
+                u128::from(pool_supply_pre)
+                    + u128::from(pool_token_amount)
+                    + owner_fee_pool
+            );
+        }
     }
 
     #[test_case(spl_token::id(), spl_token::id(), spl_token::id(); "all-token")]
@@ -6230,24 +6607,39 @@ mod tests {
                 )
                 .unwrap()
                 .amount;
+
             let withdraw_fee = accounts.fees.owner_withdraw_fee(pool_token_amount).unwrap();
 
             let half_dest = (u128::from(destination_a_amount) + 1) / 2;
+            
+            let pre_fee_source_amount = accounts.fees
+                .pre_trading_fee_amount(half_dest)
+                .unwrap();
+
             let owner_fee_source = accounts
                 .fees
-                .owner_trading_fee(half_dest)
+                .owner_trading_fee(pre_fee_source_amount)
+                .unwrap();
+
+            let swap_token_a_amount = u128::from(swap_token_a.base.amount)
+                    .checked_sub(u128::from(destination_a_amount))
+                    .unwrap()
+                    .checked_sub(owner_fee_source)
+                    .unwrap();
+            
+            let pool_mint_supply = u128::from(pool_mint.base.supply)
+                .checked_sub(pool_token_amount)
                 .unwrap();
 
             let owner_fee_pool = accounts
                 .swap_curve
                 .calculator
-                .withdraw_single_token_type_exact_out(
+                .deposit_single_token_type(
                     owner_fee_source,
-                    swap_token_a.base.amount.into(),
+                    swap_token_a_amount,
                     swap_token_b.base.amount.into(),
-                    pool_mint.base.supply.into(),
+                    pool_mint_supply,
                     TradeDirection::AtoB,
-                    RoundDirection::Floor,
                     accounts.get_current_timestamp_opt().unwrap(),
                 )
                 .unwrap();
@@ -6284,7 +6676,8 @@ mod tests {
             assert_eq!(fee_account.base.amount, to_u64(withdraw_fee + owner_fee_pool).unwrap());
         }
 
-        // correct withdrawal from fee account
+        // Correct withdrawal from fee account
+        // Tests adjusted swap_token_a_amount and pool_mint_supply.
         {
             let (
                 token_a_key,
@@ -6325,6 +6718,146 @@ mod tests {
             let token_a = StateWithExtensions::<Account>::unpack(&token_a_account.data).unwrap();
             assert_eq!(token_a.base.amount, initial_a + fee_a_amount);
         }
+
+        // owner-fee withdraw - LP tokens minted at post-burn share-price
+        {
+            // fresh user accounts and balances
+            let (
+                token_a_key,
+                mut token_a_account,
+                _token_b_key,
+                _token_b_account,
+                pool_key,
+                mut pool_account,
+            ) = accounts.setup_token_accounts(
+                &user_key,
+                &withdrawer_key,
+                initial_a,
+                initial_b,
+                initial_pool.try_into().unwrap(),
+            );
+
+            // pre-calculation imitates new math implementation 
+            let (
+                token_a_pre,           // pool reserve for token-A before the call
+                fee_account_pre,       // fee ATA balance before the call
+                burn_pool_token_amount,
+                withdraw_fee,
+                owner_fee_pool,
+            ) = {
+                let swap_token_a =
+                    StateWithExtensions::<Account>::unpack(&accounts.token_a_account.data).unwrap();
+                let swap_token_b =
+                    StateWithExtensions::<Account>::unpack(&accounts.token_b_account.data).unwrap();
+                let pool_mint =
+                    StateWithExtensions::<Mint>::unpack(&accounts.pool_mint_account.data).unwrap();
+
+                let fee_account_pre = StateWithExtensions::<Account>::unpack(
+                    &accounts.pool_fee_account.data,
+                )
+                .unwrap()
+                .base
+                .amount;
+
+                let token_a_pre = swap_token_a.base.amount;
+
+                let SingleTokenTypeResult {
+                    amount: burn_pool_token_amount,
+                    owner_fee,
+                } = accounts
+                    .swap_curve
+                    .withdraw_single_token_type_exact_out(
+                        destination_a_amount.into(),
+                        swap_token_a.base.amount.into(),
+                        swap_token_b.base.amount.into(),
+                        pool_mint.base.supply.into(),
+                        TradeDirection::AtoB,
+                        &accounts.fees,
+                        accounts.get_current_timestamp_opt().unwrap(),
+                    )
+                    .unwrap();
+
+                let withdraw_fee = accounts
+                    .fees
+                    .owner_withdraw_fee(burn_pool_token_amount)
+                    .unwrap();
+
+                let swap_token_a_after = u128::from(swap_token_a.base.amount)
+                    .checked_sub(u128::from(destination_a_amount))
+                    .unwrap()
+                    .checked_sub(owner_fee)
+                    .unwrap();
+
+                let pool_supply_after = u128::from(pool_mint.base.supply)
+                    .checked_sub(burn_pool_token_amount)
+                    .unwrap();
+
+                let owner_fee_pool = accounts
+                    .swap_curve
+                    .calculator
+                    .deposit_single_token_type(
+                        owner_fee,
+                        swap_token_a_after,
+                        swap_token_b.base.amount.into(),
+                        pool_supply_after,
+                        TradeDirection::AtoB,
+                        accounts.get_current_timestamp_opt().unwrap(),
+                    )
+                    .unwrap();
+
+                (
+                    token_a_pre,
+                    fee_account_pre,
+                    burn_pool_token_amount,
+                    withdraw_fee,
+                    owner_fee_pool,
+                )
+            }; // immutable borrows end here
+
+            // execute instruction under test
+            accounts
+                .withdraw_single_token_type_exact_amount_out(
+                    &withdrawer_key,
+                    &pool_key,
+                    &mut pool_account,
+                    &token_a_key,
+                    &mut token_a_account,
+                    destination_a_amount,
+                    maximum_pool_token_amount,
+                )
+                .unwrap();
+
+            // pool’s token-A reserve after the instruction should be the previous reserve
+            // minus only what the user withdrew (owner_fee remains inside the reserve)
+            let swap_token_a_after =
+                StateWithExtensions::<Account>::unpack(&accounts.token_a_account.data).unwrap();
+            assert_eq!(
+                swap_token_a_after.base.amount,
+                token_a_pre - destination_a_amount
+            );
+
+            // user’s token-A account should now hold their original balance plus the amount withdrawn
+            let token_a_user =
+                StateWithExtensions::<Account>::unpack(&token_a_account.data).unwrap();
+            assert_eq!(token_a_user.base.amount, initial_a + destination_a_amount);
+
+            // user’s pool-token ATA should be debited by the burned amount plus the withdraw fee
+            let pool_account_after =
+                StateWithExtensions::<Account>::unpack(&pool_account.data).unwrap();
+            assert_eq!(
+                pool_account_after.base.amount,
+                to_u64(initial_pool - burn_pool_token_amount - withdraw_fee).unwrap()
+            );
+
+            // fee account should increase exactly by withdraw_fee + owner_fee_pool on top of its prior balance
+            let fee_account =
+                StateWithExtensions::<Account>::unpack(&accounts.pool_fee_account.data).unwrap();
+            assert_eq!(
+                fee_account.base.amount,
+                fee_account_pre + to_u64(withdraw_fee + owner_fee_pool).unwrap()
+            );
+        }
+        
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -6436,13 +6969,12 @@ mod tests {
         let first_fee = if results.owner_fee > 0 {
             swap_curve
                 .calculator
-                .withdraw_single_token_type_exact_out(
+                .deposit_single_token_type(
                     results.owner_fee,
                     reserve_a.into(),
                     reserve_b.into(),
                     initial_supply.into(),
                     TradeDirection::AtoB,
-                    RoundDirection::Floor,
                     accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap()
@@ -6528,13 +7060,12 @@ mod tests {
         let second_fee = if results.owner_fee > 0 {
             swap_curve
                 .calculator
-                .withdraw_single_token_type_exact_out(
+                .deposit_single_token_type(
                     results.owner_fee,
                     reserve_a2.into(),
                     reserve_b2.into(),
                     initial_supply.into(),
                     TradeDirection::BtoA,
-                    RoundDirection::Floor,
                     accounts.get_current_timestamp_opt().unwrap()
                 )
                 .unwrap()
@@ -6592,10 +7123,11 @@ mod tests {
             &token_b_program_id,
         );
         let token_b_price = 1;
+        let scaled_token_b_price = token_b_price * RAY;
         check_valid_swap_curve(
             fees.clone(),
             CurveType::ConstantPrice,
-            Arc::new(ConstantPriceCurve { token_b_price }),
+            Arc::new(ConstantPriceCurve { token_b_price: scaled_token_b_price }),
             token_a_amount,
             token_b_amount,
             &pool_token_program_id,
@@ -6657,12 +7189,13 @@ mod tests {
             &token_b_program_id,
         );
         let token_b_price = 10_000;
+        let scaled_token_b_price = (token_b_price) * RAY;
         check_valid_swap_curve(
             fees.clone(),
             CurveType::ConstantPrice,
-            Arc::new(ConstantPriceCurve { token_b_price }),
+            Arc::new(ConstantPriceCurve { token_b_price: scaled_token_b_price }),
             token_a_amount,
-            token_b_amount / token_b_price,
+            token_b_amount / (token_b_price as u64),
             &pool_token_program_id,
             &token_a_program_id,
             &token_b_program_id,
@@ -7534,7 +8067,7 @@ mod tests {
                 fees: &fees,
             });
             assert_eq!(
-                Err(SwapError::IncorrectPoolMint.into()),
+                Err(SwapError::InvalidAccountMint.into()),
                 do_process_instruction_with_fee_constraints(
                     swap(
                         &SWAP_PROGRAM_ID,
@@ -7864,7 +8397,9 @@ mod tests {
         //   * B: 1 000 units (worth 2 000 000 each)
         let swap_token_a_amount = 1_000_000_000;
         let swap_token_b_amount = 1_000;
-        let token_b_price = 2_000_000;
+        let token_b_price = 2_000_000 as u64;
+        let scaled_token_b_price = (token_b_price as u128) * RAY;
+
         let fees = Fees {
             trade_fee_numerator,
             trade_fee_denominator,
@@ -7878,7 +8413,7 @@ mod tests {
 
         let swap_curve = SwapCurve {
             curve_type: CurveType::ConstantPrice,
-            calculator: Arc::new(ConstantPriceCurve { token_b_price }),
+            calculator: Arc::new(ConstantPriceCurve { token_b_price: scaled_token_b_price }),
         };
         let total_pool = swap_curve.calculator.new_pool_supply();
         let user_key = Pubkey::new_unique();

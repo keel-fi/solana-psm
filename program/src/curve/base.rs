@@ -34,11 +34,11 @@ pub enum CurveType {
     /// Uniswap-style constant product curve, invariant = token_a_amount *
     /// token_b_amount
     ConstantProduct,
-    /// Flat line, always providing 1:1 from one token to another
+    /// Flat line, always providing a fixed rate from one token to another. 
+    /// Uses RAY as a scale factor for `token_b_price`
     ConstantPrice,
     /// Offset curve, like Uniswap, but the token B side has a faked offset
     Offset,
-
     /// Spark PSM3 style curve
     RedemptionRateCurve
 }
@@ -113,13 +113,10 @@ impl SwapCurve {
 
         // Recalculate fees if curve couldn't use the full source_amount_less_fees
         if amount_used < source_amount_less_fees {
-            // Calculate how much less was used than expected
-            let difference = source_amount_less_fees - amount_used;
-            // Find what the original amount should have been
-            let modified_source_amount = source_amount.checked_sub(difference)?;
+            let pre_fee_amount = fees.pre_trading_fee_amount(amount_used)?;
             // Recalculate fees based on the adjusted amount
-            trade_fee = fees.trading_fee(modified_source_amount)?;
-            owner_fee = fees.owner_trading_fee(modified_source_amount)?;
+            trade_fee = fees.trading_fee(pre_fee_amount)?;
+            owner_fee = fees.owner_trading_fee(pre_fee_amount)?;
             total_fees = trade_fee.checked_add(owner_fee)?;
         }
 
@@ -198,9 +195,9 @@ impl SwapCurve {
         // https://github.com/balancer-labs/balancer-core/blob/f4ed5d65362a8d6cec21662fb6eae233b0babc1f/contracts/BMath.sol#L117
         let half_source_amount = source_amount.checked_add(1)?.checked_div(2)?; // round up
         
-        let owner_fee = fees.owner_trading_fee(half_source_amount)?;
-
         let pre_fee_source_amount = fees.pre_trading_fee_amount(half_source_amount)?;
+
+        let owner_fee = fees.owner_trading_fee(pre_fee_source_amount)?;
 
         let adjusted_source_amount = source_amount
             .checked_sub(half_source_amount)?
@@ -264,15 +261,15 @@ impl Sealed for SwapCurve {}
 impl Pack for SwapCurve {
     /// Size of encoding of all curve parameters, which include fees and any
     /// other constants used to calculate swaps, deposits, and withdrawals.
-    /// This includes 1 byte for the type, and 72 for the calculator to use as
-    /// it needs.  Some calculators may be smaller than 72 bytes.
-    const LEN: usize = 81;
+    /// This includes 1 byte for the type, and 64 for the calculator to use as
+    /// it needs.  Some calculators may be smaller than 64 bytes.
+    const LEN: usize = 65;
 
     /// Unpacks a byte buffer into a SwapCurve
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
-        let input = array_ref![input, 0, 81];
+        let input = array_ref![input, 0, 65];
         #[allow(clippy::ptr_offset_with_cast)]
-        let (curve_type, calculator) = array_refs![input, 1, 80];
+        let (curve_type, calculator) = array_refs![input, 1, 64];
         let curve_type = curve_type[0].try_into()?;
         Ok(Self {
             curve_type,
@@ -291,8 +288,8 @@ impl Pack for SwapCurve {
 
     /// Pack SwapCurve into a byte buffer
     fn pack_into_slice(&self, output: &mut [u8]) {
-        let output = array_mut_ref![output, 0, 81];
-        let (curve_type, calculator) = mut_array_refs![output, 1, 80];
+        let output = array_mut_ref![output, 0, 65];
+        let (curve_type, calculator) = mut_array_refs![output, 1, 64];
         curve_type[0] = self.curve_type as u8;
         self.calculator.pack_into_slice(&mut calculator[..]);
     }
@@ -322,7 +319,7 @@ impl TryFrom<u8> for CurveType {
 
 #[cfg(test)]
 mod test {
-    use {super::*, crate::curve::calculator::test::total_and_intermediate, proptest::prelude::*};
+    use {super::*, crate::curve::{calculator::test::total_and_intermediate, redemption_rate::RAY}, proptest::prelude::*};
 
     #[test]
     fn pack_swap_curve() {
@@ -342,6 +339,104 @@ mod test {
         packed.extend_from_slice(&[0u8; 80]); // 32 bytes reserved for curve
         let unpacked = SwapCurve::unpack_from_slice(&packed).unwrap();
         assert_eq!(swap_curve, unpacked);
+    }
+
+    #[test]
+    fn constant_price_partial_swap_recalculates_fees() {
+        // constant-price pool with small destination reserve,
+        // so the curve can only use a fraction of the input
+        let curve = ConstantPriceCurve { token_b_price: 11 * RAY };
+        let swap_curve = SwapCurve {
+            curve_type: CurveType::ConstantPrice,
+            calculator: Arc::new(curve),
+        };
+
+        // user swaps 1 000 A, pool destination reserve is low enough to limit the swap
+        let source_amount: u128 = 1_000;
+        let swap_source_amount: u128 = 10_000;
+        let swap_destination_amount: u128 = 100; // caps destination output to 100
+
+        // small fee so amount_used < source_amount_less_fees
+        let fees = Fees {
+            trade_fee_numerator: 1,  // 0.1 %
+            trade_fee_denominator: 1_000,
+            owner_trade_fee_numerator: 0,
+            owner_trade_fee_denominator: 1, // ignored (zero)
+            ..Fees::default()
+        };
+
+        let result = swap_curve
+            .swap(
+                source_amount,
+                swap_source_amount,
+                swap_destination_amount,
+                TradeDirection::AtoB,
+                &fees,
+                None,
+            )
+            .unwrap();
+
+        // Amount that actually hit the curve (post-fee).
+        let amount_used = result
+            .source_amount_swapped
+            .checked_sub(result.trade_fee + result.owner_fee)
+            .unwrap();
+
+        // correct fees must come from the PRE-fee amount of `amount_used`
+        let pre_fee_amount = fees.pre_trading_fee_amount(amount_used).unwrap();
+        let expected_trade_fee = fees.trading_fee(pre_fee_amount).unwrap();
+        let expected_owner_fee = fees.owner_trading_fee(pre_fee_amount).unwrap();
+
+        assert_eq!(result.trade_fee, expected_trade_fee);
+        assert_eq!(result.owner_fee, expected_owner_fee);
+    }
+
+    #[test]
+    fn withdraw_single_token_owner_fee_on_pre_fee_amount() {
+        // pool balances and exact-out request
+        let swap_source_amount: u128 = 1_000_000;
+        let swap_destination_amount: u128 = 1_000_000;
+        let pool_supply: u128 = 1_000_000;
+        let source_amount: u128 = 10_001; // odd to avoid exact halving
+
+        // 3 % trade fee, 15 % owner fee
+        let fees = Fees {
+            trade_fee_numerator: 30,
+            trade_fee_denominator: 1000,
+            owner_trade_fee_numerator: 150,
+            owner_trade_fee_denominator: 1000,
+            ..Fees::default()
+        };
+
+        let swap_curve = SwapCurve {
+            curve_type: CurveType::ConstantProduct,
+            calculator: Arc::new(ConstantProductCurve {}),
+        };
+
+        let result = swap_curve
+            .withdraw_single_token_type_exact_out(
+                source_amount,
+                swap_source_amount,
+                swap_destination_amount,
+                pool_supply,
+                TradeDirection::BtoA,
+                &fees,
+                None,
+            )
+            .unwrap();
+
+        // expected owner fee on PRE-fee amount
+        let half = (source_amount + 1) / 2; // ceil(source/2)
+        let pre_fee = fees.pre_trading_fee_amount(half).unwrap();
+        let expected = fees.owner_trading_fee(pre_fee).unwrap();
+
+        // owner fee the old code would have produced (post-fee basis)
+        let legacy = fees.owner_trading_fee(half).unwrap();
+
+        // must match new formula
+        assert_eq!(result.owner_fee, expected);
+        // must exceed legacy value
+        assert!(expected > legacy);
     }
 
     #[test]

@@ -15,7 +15,7 @@ use solana_program_test::{
     ProgramTestContext
 };
 use solana_program::pubkey;
-use nova_psm::{
+use solana_psm::{
     curve::redemption_rate::RedemptionRateCurve, permission::Permission, state::SwapVersion
 };
 use spl_token::{
@@ -30,7 +30,7 @@ pub async fn program_test_context() -> ProgramTestContext {
     let mut program_test = ProgramTest::default();
 
     program_test.add_program(
-        "nova_psm", 
+        "solana_psm", 
         PROGRAM_ID, 
         None
     );
@@ -186,7 +186,7 @@ pub async fn fetch_redemption_rate_curve(
 
     let swap_version = SwapVersion::unpack(&account.data).unwrap();
 
-    let mut calculator_dst = vec![0; 80];
+    let mut calculator_dst = vec![0; 64];
     swap_version.swap_curve().calculator.pack_into_slice(&mut calculator_dst);
 
     RedemptionRateCurve::unpack_unchecked(

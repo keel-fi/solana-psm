@@ -145,8 +145,14 @@ pub enum SwapError {
     #[error("Invalid ray scaling factor")]
     InvalidRay,
     /// Unsupported token extension.
-    #[error("Unsupported token extension.")]
-    UnsupportedTokenExtension
+    #[error("Unsupported token extension")]
+    UnsupportedTokenExtension,
+    /// Token A and B have different decimals.
+    #[error("Mint A and B have mismatched decimals")]
+    MismatchedMintDecimals,
+    /// The token account is not associated with the expected mint.
+    #[error("Account mint does not match expected mint")]
+    InvalidAccountMint
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {
@@ -253,6 +259,12 @@ impl PrintProgramError for SwapError {
             },
             SwapError::UnsupportedTokenExtension => {
                 msg!("Error: Unsupported token extension")
+            },
+            SwapError::MismatchedMintDecimals => {
+                msg!("Error: Mint A and B have mismatched decimals")
+            },
+            SwapError::InvalidAccountMint => {
+                msg!("Error: Account mint does not match expected mint")
             }
         }
     }

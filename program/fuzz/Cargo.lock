@@ -711,36 +711,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nova-psm"
-version = "1.0.0"
-dependencies = [
- "arbitrary",
- "arrayref",
- "enum_dispatch",
- "num-derive",
- "num-traits",
- "roots",
- "solana-program",
- "spl-math",
- "spl-token",
- "spl-token-2022",
- "thiserror 2.0.12",
-]
-
-[[package]]
-name = "nova-psm-fuzz"
-version = "0.0.1"
-dependencies = [
- "arbitrary",
- "bincode",
- "honggfuzz",
- "nova-psm",
- "solana-program",
- "spl-math",
- "spl-token",
-]
-
-[[package]]
 name = "num-bigint"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1668,6 +1638,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "319f0ef15e6e12dc37c597faccb7d62525a509fec5f6975ecb9419efddeb277b"
 dependencies = [
  "solana-program-error",
+]
+
+[[package]]
+name = "solana-psm"
+version = "1.0.0"
+dependencies = [
+ "arbitrary",
+ "arrayref",
+ "enum_dispatch",
+ "num-derive",
+ "num-traits",
+ "roots",
+ "solana-program",
+ "spl-math",
+ "spl-token",
+ "spl-token-2022",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "solana-psm-fuzz"
+version = "0.0.1"
+dependencies = [
+ "arbitrary",
+ "bincode",
+ "honggfuzz",
+ "solana-program",
+ "solana-psm",
+ "spl-math",
+ "spl-token",
 ]
 
 [[package]]

@@ -24,7 +24,7 @@ use solana_sdk::{
     transaction::Transaction,
     system_instruction::transfer
 };
-use nova_psm::curve::{
+use solana_psm::curve::{
     redemption_rate::RedemptionRateCurve, 
     fees::Fees
 };
@@ -680,14 +680,13 @@ async fn create_redemption_rate_curve(
         .unwrap();
 
     let curve = RedemptionRateCurve {
-        ray: RAY,
         max_ssr,
         ssr: RAY,
         rho: clock.unix_timestamp as u128,
         chi: RAY,
     };
 
-    let mut curve_buf = vec![0; 80];
+    let mut curve_buf = vec![0; 64];
     Pack::pack_into_slice(&curve, &mut curve_buf);
 
     let data = vec![

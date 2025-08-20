@@ -78,7 +78,9 @@ fn pre_fee_amount(
 ) -> Option<u128> {
     if fee_numerator == 0 || fee_denominator == 0 {
         Some(post_fee_amount)
-    } else if fee_numerator == fee_denominator || post_fee_amount == 0 {
+    } else if fee_numerator >= fee_denominator {
+        None
+    } else if post_fee_amount == 0 {
         Some(0)
     } else {
         let numerator = post_fee_amount.checked_mul(fee_denominator)?;

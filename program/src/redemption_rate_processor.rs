@@ -40,12 +40,18 @@ pub fn process_curve_update(
         return Err(ProgramError::IllegalOwner)
     }
 
-    if permission_info.owner != program_id {
-        return Err(ProgramError::IllegalOwner)
+    if !signer_info.is_signer {
+        return Err(ProgramError::MissingRequiredSignature)
     }
 
-    let permission = Permission::unpack(&permission_info.data.borrow())?;
-    permission.validate_update_params_permission(swap_info, signer_info)?;
+    let permission = Permission::unpack_permission(
+        permission_info, 
+        swap_info, 
+        signer_info, 
+        program_id
+    )?;
+    
+    permission.validate_update_params_permission()?;
 
     let mut swap_data = swap_info.data.borrow_mut();
     let swap = SwapVersion::unpack(&swap_data)?;
@@ -101,12 +107,15 @@ fn create_new_swap_state(
     Ok(new_swap)
 
 }
+
+
 fn extract_curve(
     input: &[u8]
 ) -> Result<RedemptionRateCurve, ProgramError> {
-    let input = array_ref![input, 291, 81];
+    // equal to SwapVersion::LATEST_LEN - SwapCurve::LEN , SwapCurve::LEN
+    let input = array_ref![input, SwapVersion::LATEST_LEN - SwapCurve::LEN, SwapCurve::LEN];
 
-    let (curve_type, calculator) = array_refs![input, 1, 80];
+    let (curve_type, calculator) = array_refs![input, 1, RedemptionRateCurve::LEN];
 
     let curve_type = curve_type[0].try_into()?;
 
@@ -116,4 +125,21 @@ fn extract_curve(
         },
         _ => return Err(ProgramError::InvalidAccountData)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_swap_curve_len() {
+        assert_eq!(SwapCurve::LEN, 65);
+        assert_eq!(SwapCurve::LEN - 1, RedemptionRateCurve::LEN);
+    }
+
+    #[test]
+    fn test_swap_v1_curve_offset() {
+        // requires that SwapCurve is packed last in SwapVersion
+        assert_eq!(SwapVersion::LATEST_LEN - SwapCurve::LEN, 291);
+    }
 }

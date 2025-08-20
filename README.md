@@ -1,16 +1,16 @@
-# Nova PSM
+# Solana PSM
 
 This repository contains the implementation of a PSM (Peg Stability Module) for the Solana Virtual Machine. The functionality within this program is based largely on Spark's PSM [link](https://github.com/sparkdotfi/spark-psm).
 
 The SPL Token Swap functionality facilitates swapping between any two SPL Tokens, which can be facilitated through a choice of curves. `ConstantProduct`, `ConstantPrice` and `Offset` curves are supported in the original implementation, but are not anticipated to be required initially. 
 
-This implementation extends the range of curves offered to include a new `RedemptionRate` curve type, modeled on the functionality within [link](https://github.com/sparkdotfi/spark-psm/blob/master/src/PSM3.sol) and the corresponding `RateProvider` implementation for EVM, but adapted for the nuissances of Solana and the SVM. As such, the this program also includes equivalent functionality associated with the  `RateProvider` contract in Spark's EVM implementation.
+This implementation extends the range of curves offered to include a new `RedemptionRate` curve type, modeled on the functionality within [PSM3.sol](https://github.com/sparkdotfi/spark-psm/blob/master/src/PSM3.sol) and the corresponding `RateProvider` implementation for EVM, but adapted for the nuissances of Solana and the SVM. As such, this program also includes equivalent functionality associated with the  `RateProvider` contract in Spark's EVM implementation.
 
 The `RedemptionRate` curve is intended to support the conversion of Solana USDS to Solana sUSDS (Savings USDS) and subsequent redemption, although it could be used to support similar functionality for any pair of tokens that follows a similar approach and can provide similarly described redemption rate configurations.
 
 The choice to build on-top of the SPL Token Swap program was based on an intention to leverage broad ecosystem adoption and composability. The SPL Token Swap Program has been integrated with by many protocols, searchers, algorithmic traders and crucially aggregators. By leveraging this basis and ensuring that key instruction interfaces remain unchanged, this program remains entirely compatible for this audience of possible integrators.
 
-All liquidity provision functionality and core swapping functionality remains unchanged and inherited from the original SPL Token Swap program. The SPL Token Swap program has been audited many times and has been widely used and battetested across Solana DeFi.
+All liquidity provision functionality and core swapping functionality remains unchanged and inherited from the original SPL Token Swap program. The SPL Token Swap program has been audited many times and has been widely used and battle-tested across Solana DeFi.
 
 ## Instruction Overview
 
@@ -35,19 +35,19 @@ All liquidity provision functionality and core swapping functionality remains un
 
 ## `RedemptionRate` Curve Explanation
 
-The redemption rate model is intended to provide a facility to enable an up-to-date conversion rate to be calculated at the time of request (i.e. at the current block's timesamp), without the need for the rate to be continuously posted. Provided the underlying rate of accrual has not changed, this will replicate (with a very high degree of precision) the rate that would be reflected at the same time on the source protocol implementing the same model.
+The redemption rate model is intended to provide a facility to enable an up-to-date conversion rate to be calculated at the time of request (i.e. at the current block's timestamp), without the need for the rate to be continuously posted. Provided the underlying rate of accrual has not changed, this will replicate (with a very high degree of precision) the rate that would be reflected at the same time on the source protocol implementing the same model.
 
-The functionality implemented here is based on Spark's implementation [link](https://github.dev/sparkdotfi/xchain-ssr-oracle/blob/master/src/SSROracleBase.sol).
+The functionality implemented here is based on Spark's implementation [SSROracleBase.sol](https://github.dev/sparkdotfi/xchain-ssr-oracle/blob/master/src/SSROracleBase.sol).
 
-The configuration consists of `ssr`, `chi` and `rho` paramteres — which together allow the prevailing redemption rate to be calculated for the current block timestamp, without needing the current redemption rate to be continuously reported. 
+The configuration consists of `ssr`, `chi` and `rho` parameters — which together allow the prevailing redemption rate to be calculated for the current block timestamp, without needing the current redemption rate to be continuously reported. 
 
 NOTE: The complexity of the calculation increases with the time over which the rate must compound (specifically the time between `rho` and now). Testing shows that periods of up to 3650 days can be calculated within a `swap` instruction at under 400,000 compute units. When developing infrastructure to provide updates to the configuration, this should be considered in determining a suitable minimum frequency of update.
 
-NOTE: When a rate change occured (i.e. change in `ssr` parameter), calculated rates will be slightly misaligned from those in the original protocol. For typical rates (0-20% APY) the change in rate over short periods of time is minimal, and so the the attack vector is very limited over short periods of time. However, over time this divergence will grow, potentially creating a risk of loss for liquidity providers. When developing infrastructure to provide updates to the configuration, this should be considered in order to minimize the time between rates occuring on the source/original protocol and being reflected within this implementation's configuration.
+NOTE: When a rate change occurred (i.e. change in `ssr` parameter), calculated rates will be slightly misaligned from those in the original protocol. For typical rates (0-20% APY) the change in rate over short periods of time is minimal, and so the attack vector is very limited over short periods of time. However, over time this divergence will grow, potentially creating a risk of loss for liquidity providers. When developing infrastructure to provide updates to the configuration, this should be considered in order to minimize the time between rates occurring on the source/original protocol and being reflected within this implementation's configuration.
  
-### Updatingto the `RedemptionRate` configuration
+### Updating the `RedemptionRate` configuration
 
-For swap pairs configured to use the `RedemptionRate` curve type, the underlying price or swap rate determined is effected by the configuration of within the curve's state. These parameters are intended to be updated over time, to reflect changes in the redemption rate from the core issuing protocol of the yield-bearing token (e.g. Sky's core protocol on Ethereum for sUSDS/USDS creation and redemption).
+For swap pairs configured to use the `RedemptionRate` curve type, the underlying price or swap rate determined is affected by the configuration within the curve's state. These parameters are intended to be updated over time to reflect changes in the redemption rate from the core issuing protocol of the yield-bearing token (e.g. Sky's core protocol on Ethereum for sUSDS/USDS creation and redemption).
 
 This rate is updated through a permissioned instruction (`SetRates`). The swap authority remains the super-authority for a particular swap pair, but other update authority can optionally be added using `InitializePermission` and managed using `UpdatePermission`.
 
@@ -172,7 +172,7 @@ solana balance
 
 # Deploy with production keypair
 cargo build-sbf  
-solana program deploy target/deploy/nova_psm.so --keypair ~/production-deployer.json
+solana program deploy target/deploy/solana_psm.so --keypair ~/production-deployer.json
 ```
 
 ## Program Addresses
