@@ -48,6 +48,14 @@ jobs:
         # step successfully builds, but errors parsing output.
         # We should continue to attempt to upload the artifact.
         continue-on-error: true
+      - name: Test 0
+        run: pwd
+      - name: Test 1
+        run: ls
+      - name: Test 2
+        run: ls ./target
+      - name: Test 2
+        run: ls ./target/deploy
       - name: Upload psm
         uses: actions/upload-artifact@v4
         with:
