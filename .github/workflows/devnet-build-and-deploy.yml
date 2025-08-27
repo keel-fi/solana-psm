@@ -32,6 +32,8 @@ jobs:
   verified_build:
     name: verified_build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Install solana-verify dependencies
