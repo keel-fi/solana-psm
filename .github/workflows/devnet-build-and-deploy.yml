@@ -56,11 +56,13 @@ jobs:
         run: ls ./target
       - name: Test 2
         run: ls -lh ./target/deploy
+      - name: Move build file
+        run: mv ./target/deploy/solana_psm.so ./solana_psm.so
       - name: Upload psm
         uses: actions/upload-artifact@v4
         with:
           name: solana_psm.so
-          path: ./target/deploy/solana_psm.so
+          path: ./solana_psm.so
 
   test_build:
     name: Test verifiable build
