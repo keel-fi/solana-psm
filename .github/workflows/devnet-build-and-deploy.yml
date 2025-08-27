@@ -48,14 +48,6 @@ jobs:
         # step successfully builds, but errors parsing output.
         # We should continue to attempt to upload the artifact.
         continue-on-error: true
-      - name: Test 0
-        run: pwd
-      - name: Test 1
-        run: ls
-      - name: Test 2
-        run: ls ./target
-      - name: Test 2
-        run: ls -lh ./target/deploy
       - name: Upload psm
         uses: actions/upload-artifact@v4
         with:
@@ -75,6 +67,11 @@ jobs:
         with:
           name: solana_psm.so
           path: ./target/deploy
+      # Solana CLI required for cargo test-sbf
+      - name: Download Solana CLI
+        run: sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+      - name: Add Solana CLI to path
+        run: echo "/home/runner/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
       - name: Test verifiable build
         run: cargo test-sbf
 
