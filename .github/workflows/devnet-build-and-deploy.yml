@@ -55,7 +55,7 @@ jobs:
       - name: Test 2
         run: ls ./target
       - name: Test 2
-        run: ls ./target/deploy
+        run: ls -lh ./target/deploy
       - name: Upload psm
         uses: actions/upload-artifact@v4
         with:
