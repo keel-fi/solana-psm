@@ -62,7 +62,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
           name: solana_psm.so
-          path: ./target/deploy/solana_psm.so
+          path: ./program/target/deploy/solana_psm.so
 
   test_build:
     name: Test verifiable build
