@@ -32,8 +32,6 @@ jobs:
   verified_build:
     name: verified_build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Install solana-verify dependencies
@@ -59,7 +57,7 @@ jobs:
       - name: Test 2
         run: ls -lh ./target/deploy
       - name: Move build file
-        run: mv ./target/deploy/solana_psm.so ./solana_psm.so
+        run: sudo mv ./target/deploy/solana_psm.so ./solana_psm.so
       - name: Upload psm
         uses: actions/upload-artifact@v4
         with:
