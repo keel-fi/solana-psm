@@ -87,7 +87,7 @@ jobs:
       contents: write
     defaults:
       run:
-        working-directory: ./app
+        working-directory: ./
     needs:
       - test_build
       - security_audit
