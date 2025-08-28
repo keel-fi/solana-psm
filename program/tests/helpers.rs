@@ -14,8 +14,8 @@ use solana_program_test::{
     ProgramTest, 
     ProgramTestContext
 };
-use solana_program::pubkey;
 use solana_psm::{
+    ID,
     curve::redemption_rate::RedemptionRateCurve, permission::Permission, state::SwapVersion
 };
 use spl_token::{
@@ -24,7 +24,7 @@ use spl_token::{
     instruction::mint_to
 };
 
-pub const PROGRAM_ID: Pubkey = pubkey!("5B9vCSSga3qXgHca5Liy3WAQqC2HaB3sBsyjfkH47uYv");
+pub const PROGRAM_ID: Pubkey = ID;
 
 pub async fn program_test_context() -> ProgramTestContext {
     let mut program_test = ProgramTest::default();
