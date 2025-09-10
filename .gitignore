@@ -5,3 +5,4 @@
 /program/fuzz/hfuzz_workspace/
 /program/fuzz/target/
 /program/keys/
+.DS_Store

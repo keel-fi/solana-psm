@@ -284,7 +284,7 @@ pub enum SwapInstruction {
     /// 
     /// 0. `[writable]` Token-swap
     /// 1. `[]` Permission account
-    /// 2. `[]` Signer, linked to permission account
+    /// 2. `[signer]` Signer, linked to permission account
     SetRates(SetRates),
 
     /// Initialize a new permission
