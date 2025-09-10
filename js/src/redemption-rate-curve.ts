@@ -41,7 +41,7 @@ const SetRatesInstructionLayout = struct<SetRatesInstruction>([
  * @param chi
  * @returns
  */
-export const getPsmSsrUpdateInstruction = (
+export const createSetRatesInstruction = (
   swapProgramId: PublicKey,
   swapAccount: PublicKey,
   permissionAccount: PublicKey,
