@@ -6,7 +6,7 @@
 
 #[cfg(feature = "fuzz")]
 use arbitrary::Arbitrary;
-use crate::curve::base::CurveType;
+use crate::{curve::base::CurveType, permission::Permission};
 
 use {
     crate::{
@@ -825,6 +825,125 @@ pub fn swap(
         program_id: *program_id,
         accounts,
         data,
+    })
+}
+
+/// Creates a `set_rates` instruction.
+pub fn set_rates(
+    program_id: &Pubkey,
+    swap_pubkey: &Pubkey,
+    permission_authority: &Pubkey,
+    instruction: SetRates
+) -> Result<Instruction, ProgramError> {
+    let (current_permission_pda, _) = Pubkey::try_find_program_address(
+        &[
+            Permission::PERMISSION_SEED,
+            swap_pubkey.as_ref(),
+            permission_authority.as_ref()
+        ], 
+        program_id
+    ).ok_or(ProgramError::InvalidSeeds)?;
+
+    let data = SwapInstruction::SetRates(instruction).pack();
+
+    let accounts = vec![
+        AccountMeta::new(*swap_pubkey, false),
+        AccountMeta::new_readonly(current_permission_pda, false),
+        AccountMeta::new_readonly(*permission_authority, true)
+    ];
+
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+/// Creates an `initialize_permission` instruction.
+pub fn initialize_permission(
+    program_id: &Pubkey,
+    system_program_id: &Pubkey,
+    swap_pubkey: &Pubkey,
+    payer: &Pubkey,
+    permission_authority: &Pubkey,
+    new_authority: &Pubkey,
+    instruction: InitializePermission
+) -> Result<Instruction, ProgramError> {
+    let (current_permission_pda, _) = Pubkey::try_find_program_address(
+        &[
+            Permission::PERMISSION_SEED,
+            swap_pubkey.as_ref(),
+            permission_authority.as_ref()
+        ], 
+        program_id
+    ).ok_or(ProgramError::InvalidSeeds)?;
+
+    let (new_permission_pda, _) = Pubkey::try_find_program_address(
+        &[
+            Permission::PERMISSION_SEED,
+            swap_pubkey.as_ref(),
+            new_authority.as_ref()
+        ], 
+        program_id
+    ).ok_or(ProgramError::InvalidSeeds)?;
+
+    let data = SwapInstruction::InitializePermission(instruction).pack();
+
+    let accounts = vec![
+        AccountMeta::new_readonly(*swap_pubkey, false),
+        AccountMeta::new_readonly(current_permission_pda, false),
+        AccountMeta::new(new_permission_pda, false),
+        AccountMeta::new_readonly(*permission_authority, true),
+        AccountMeta::new_readonly(*payer, true),
+        AccountMeta::new_readonly(*system_program_id, false),
+    ];
+
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+/// Creates an `update_permission` instruction.
+pub fn update_permission(
+    program_id: &Pubkey,
+    swap_pubkey: &Pubkey,
+    permission_authority: &Pubkey,
+    permission_to_update_authority: &Pubkey,
+    instruction: UpdatePermission
+) -> Result<Instruction, ProgramError> {
+    let (current_permission_pda, _) = Pubkey::try_find_program_address(
+        &[
+            Permission::PERMISSION_SEED,
+            swap_pubkey.as_ref(),
+            permission_authority.as_ref()
+        ], 
+        program_id
+    ).ok_or(ProgramError::InvalidSeeds)?;
+
+    let (permission_to_update, _) = Pubkey::try_find_program_address(
+        &[
+            Permission::PERMISSION_SEED,
+            swap_pubkey.as_ref(),
+            permission_to_update_authority.as_ref()
+        ], 
+        program_id
+    ).ok_or(ProgramError::InvalidSeeds)?;
+
+    let data = SwapInstruction::UpdatePermission(instruction).pack();
+
+    let accounts = vec![
+        AccountMeta::new_readonly(*swap_pubkey, false),
+        AccountMeta::new_readonly(current_permission_pda, false),
+        AccountMeta::new(permission_to_update, false),
+        AccountMeta::new_readonly(*permission_authority, true)
+    ];
+
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
     })
 }
 
